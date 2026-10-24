@@ -16,12 +16,9 @@ Edit the copied file:
 ```dotenv
 DOMAIN=your-domain.example
 TLS_EMAIL=you@example.com
-FORMA_SUPPORT_EMAIL=you@example.com
-FORMA_SALES_ENABLED=false
-ALIPAY_WAP_PAY_ENABLED=false
 ```
 
-Use your own domain and email. Leave payment credentials empty for a creation-only installation. Keep `deploy/.env` private; it is ignored by Git.
+Use your own domain and email. Keep `deploy/.env` private; it is ignored by Git.
 
 ## Build and start
 

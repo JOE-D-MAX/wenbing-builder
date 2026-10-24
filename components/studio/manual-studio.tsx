@@ -5,7 +5,6 @@ import { ArrowUpRight, ArrowRight, Check, ImagePlus, LoaderCircle, ShieldCheck, 
 import type { SitePreviewDialogProps } from '@/components/studio/site-preview-dialog';
 import { normalizeBrief, draftBackup, readDraftBackup, type Brief } from '@/lib/studio';
 import { DesignControls } from '@/components/studio/design-controls';
-import { checkoutStorageKey, serializeCheckoutDraft, readCheckoutDraft } from '@/lib/checkout-draft';
 import { withRequestTimeout, secureRandomUUID, decodeUploadImage, type DecodedImage } from '@/lib/client-compat';
 import './manual-studio.css';
 import { continueWithBlocks } from '@/lib/block-transfer';
@@ -55,20 +54,13 @@ export default function ManualStudio(){
  useEffect(()=>{
    if(draftInitialized.current)return;
    draftInitialized.current=true;
-   const params=new URLSearchParams(location.search);
-   const returnedId=params.get('order');
-   if(returnedId&&/^F[a-f0-9]{30}$/.test(returnedId)){location.replace('/checkout?order='+encodeURIComponent(returnedId));return;}
-   const editingId=params.get('editDraft');
-   if(editingId)try{
-     const restored=readCheckoutDraft(sessionStorage.getItem(checkoutStorageKey(editingId))||'',editingId).brief;
-     setBrief(restored);setDraftStatus('已恢复付款页对应的设计资料');setDraftLoaded(true);window.history.replaceState(null,'','/studio/manual');return;
-   }catch{setNotice('该待发布版本已无法读取，已尝试恢复此浏览器最近保存的资料。');}
    const savedUndo=stored('forma-brief-undo-v1');
    if(savedUndo)try{setUndo(readDraftBackup(savedUndo));}catch{}
    let restored:Brief|null=null;
    const saved=stored('forma-brief-v3')||stored('forma-brief-v2');
    if(saved)try{restored=readDraftBackup(saved);setBrief(restored);setDraftStatus('已恢复上次填写的资料');}catch{setNotice('上次资料无法读取，可以导入已下载的资料备份。');}
-   const example=params.get('example');
+    const params=new URLSearchParams(location.search);
+    const example=params.get('example');
    if(example==='restaurant'||example==='personal'||example==='business'){
      const previous=restored||{...empty};
      remember('forma-brief-undo-v1',draftBackup(previous));setUndo(previous);setBrief({...examples[example]});
@@ -117,16 +109,11 @@ export default function ManualStudio(){
    catch(e){setError(e instanceof SyntaxError?'文件不是有效的资料备份，请选择文炳建站导出的 JSON 文件。':(e as Error).message);}
    finally{if(importFile.current)importFile.current.value='';}
  }
- function goToCheckout(){
-   if(!submittedBrief.current||!preview){setError('请先生成并确认网站预览。');return;}
-   try{
-     if(!requestKey.current)requestKey.current=secureRandomUUID();
-     const id=requestKey.current;
-     sessionStorage.setItem(checkoutStorageKey(id),serializeCheckoutDraft(id,submittedBrief.current));
-     remember('forma-brief-v3',draftBackup(submittedBrief.current));
-     location.assign('/checkout?draft='+encodeURIComponent(id));
-   }catch{setPreviewOpen(false);setError('浏览器暂时无法保存待发布资料。请允许站点存储后重试，也可以先下载资料备份。');}
- }
+   function downloadPreview(){
+    if(!preview||!previewHtml){setError('请先生成网站预览。');return;}
+    const url=URL.createObjectURL(new Blob([previewHtml],{type:'text/html;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download=(preview.name||'website')+'.html';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+  }
  function openBlocks(){try{continueWithBlocks(previewHtml,preview?.name||'我的模板网站');}catch(reason){setPreviewOpen(false);setError(reason instanceof Error?reason.message:'暂时无法打开模块工作区。');}}
  return <main className="manual-studio">
   <header className="site-nav manual-studio-nav">
@@ -148,16 +135,15 @@ export default function ManualStudio(){
      <DesignControls brief={brief} onChange={edit}/>
      <label>{t("联系方式")}<span>{t("选填")}</span><textarea rows={2} maxLength={1000} value={brief.contact} onChange={e=>edit({contact:e.target.value})} placeholder={t('地址：…\n邮箱：… / 电话：… / 营业时间：…')}/></label>
      <input type="file" ref={upload} hidden accept="image/jpeg,image/png,image/webp" onChange={e=>void photo(e.target.files?.[0])}/><button type="button" className="upload-box" onClick={()=>upload.current?.click()}>{brief.image?<img src={brief.image} alt={t("已选择的介绍图片")}/>:<ImagePlus size={23}/>}<span><strong>{t(uploading?'图片处理中…':brief.image?'图片已准备好 · 点击替换':'加入一张自己的图片')}</strong><small>{t("门店、作品或肖像 · JPG / PNG / WebP · 8 MB 内")}</small></span><PlusIcon/></button>{brief.image&&<button type="button" className="remove-image" onClick={()=>edit({image:''})}>{t("移除图片")}</button>}
-     <button className="btn dark full" disabled={busy||uploading}>{busy||uploading?<LoaderCircle className="spin" size={18}/>:<Sparkles size={18}/>} {t(uploading?'正在处理图片…':busy?'正在生成模板预览…':'免费生成网站预览')} <ArrowRight size={18}/></button><p className="form-note">{t("此步骤免费，满意后再选择付费发布。")}</p>
+     <button className="btn dark full" disabled={busy||uploading}>{busy||uploading?<LoaderCircle className="spin" size={18}/>:<Sparkles size={18}/>} {t(uploading?'正在处理图片…':busy?'正在生成模板预览…':'免费生成网站预览')} <ArrowRight size={18}/></button><p className="form-note">{t("生成后可下载 HTML 文件，自行部署到任意静态托管。")}</p>
      <div className="draft-toolbar"><button type="button" onClick={()=>saveFile(draftBackup(brief),'文炳建站-网站资料.json')}>{t("下载资料")}</button><button type="button" onClick={()=>importFile.current?.click()}>{t("导入资料")}</button><button type="button" onClick={()=>sample(brief.kind)}>{t("填入示例")}</button><button type="button" onClick={()=>replaceBrief({...empty,kind:brief.kind},'已清空填写资料，可以撤销。')}>{t("清空资料")}</button></div><input type="file" ref={importFile} hidden accept=".json,application/json" onChange={e=>void importDraft(e.target.files?.[0])}/><p className="draft-status" role="status">{t(draftStatus)}<span>{t("· 资料备份请自行保管")}</span></p>{undo&&<div className="draft-undo"><span>{t("上一次替换前的资料还在。")}</span><button type="button" onClick={()=>{edit(undo);setUndo(null);forget('forma-brief-undo-v1');setNotice('已恢复替换前的资料。');}}>{t("撤销替换")}</button></div>}
     </form>
-    <aside className="preview-aside"><div className="preview-top"><span>{t("你的网站预览")}</span><span className="live-dot"/><small>{t(preview?'免费预览已就绪':'等待你的故事')}</small></div>{preview?<><div className="template-frame"><iframe title={t("你的模板网站预览")} srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer"/><span>{t("PREVIEW / 尚未发布")}</span></div><div className="preview-controls"><button className="btn outline" onClick={()=>setPreviewOpen(true)}>{t("放大预览")}<ArrowUpRight size={16}/></button><button className="btn dark" onClick={goToCheckout}>{t("查看费用并发布")}<ArrowRight size={16}/></button></div></>:<div className="locked-preview"><Sample kind={brief.kind} soft/><div className="lock-overlay"><span className="lock-circle"><Sparkles size={25}/></span><h3>{t("一个好故事，")}<br/>{t("就是一个好开始。")}</h3><p>{t("填入介绍，免费生成你的完整页面。")}<br/>{t("换个配色，或者再加一张图片。")}</p></div></div>}<div className="preview-foot"><span>{preview?t(themeNames[preview.theme] || preview.theme)+' · '+t(layoutNames[preview.layout] || preview.layout):t('先预览，满意再发布')}</span><span>DESKTOP + MOBILE</span></div><div className="preview-tips"><span><Check size={14}/>{t("完整页面预览")}</span><span><Check size={14}/>{t("资料自动保存")}</span><span><Check size={14}/>{t("电脑手机适配")}</span></div></aside>
+    <aside className="preview-aside"><div className="preview-top"><span>{t("你的网站预览")}</span><span className="live-dot"/><small>{t(preview?'免费预览已就绪':'等待你的故事')}</small></div>{preview?<><div className="template-frame"><iframe title={t("你的模板网站预览")} srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer"/><span>{t("PREVIEW / 尚未发布")}</span></div><div className="preview-controls"><button className="btn outline" onClick={()=>setPreviewOpen(true)}>{t("放大预览")}<ArrowUpRight size={16}/></button><button className="btn dark" onClick={downloadPreview}>{t("下载网站")}<ArrowRight size={16}/></button></div></>:<div className="locked-preview"><Sample kind={brief.kind} soft/><div className="lock-overlay"><span className="lock-circle"><Sparkles size={25}/></span><h3>{t("一个好故事，")}<br/>{t("就是一个好开始。")}</h3><p>{t("填入介绍，免费生成你的完整页面。")}<br/>{t("换个配色，或者再加一张图片。")}</p></div></div>}<div className="preview-foot"><span>{preview?t(themeNames[preview.theme] || preview.theme)+' · '+t(layoutNames[preview.layout] || preview.layout):t('先预览，满意再发布')}</span><span>DESKTOP + MOBILE</span></div><div className="preview-tips"><span><Check size={14}/>{t("完整页面预览")}</span><span><Check size={14}/>{t("资料自动保存")}</span><span><Check size={14}/>{t("电脑手机适配")}</span></div></aside>
    </div>
    {error&&<p className="feedback error" role="alert">{t(error)}</p>}{notice&&<p className="feedback" role="status">{t(notice)}</p>}
-   <div className="checkout-entry section-wrap"><a href="/checkout#orders">{t("已有订单？前往订单与付款页")}<ArrowUpRight size={15}/></a></div>
   </section>
 
-  {PreviewDialog&&<PreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} name={preview?.name||''} html={previewHtml} device={device} onDeviceChange={setDevice} onCheckout={goToCheckout} onCustomize={openBlocks}/>}
+  {PreviewDialog&&<PreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} name={preview?.name||''} html={previewHtml} device={device} onDeviceChange={setDevice} onDownload={downloadPreview} onCustomize={openBlocks}/>}
  </main>;
 }
 

@@ -16,13 +16,6 @@ services:
       FORMA_MIGRATIONS_DIR: /app/drizzle
       FORMA_PUBLIC_ORIGIN: https://${DOMAIN:?请在 deploy/.env 配置已购买并解析的域名}
       FORMA_TRUST_PROXY: "true"
-      FORMA_SALES_ENABLED: ${FORMA_SALES_ENABLED:-false}
-      FORMA_SUPPORT_EMAIL: ${FORMA_SUPPORT_EMAIL:-}
-      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
-      ALIPAY_SELLER_ID: ${ALIPAY_SELLER_ID:-}
-      ALIPAY_PRIVATE_KEY: ${ALIPAY_PRIVATE_KEY:-}
-      ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY:-}
-      ALIPAY_WAP_PAY_ENABLED: ${ALIPAY_WAP_PAY_ENABLED:-false}
     expose:
       - "3000"
     volumes:

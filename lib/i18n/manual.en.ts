@@ -119,4 +119,7 @@ export const manualEnglish: Record<string, string> = {
   '请求格式不正确。': 'The request format is invalid.',
   '文件过大，请压缩图片。': 'The file is too large. Please compress the image.',
   '缺少内容。': 'Content is missing.',
+  '下载网站': 'Download site',
+  '请先生成网站预览。': 'Generate a website preview first.',
+  '生成后可下载 HTML 文件，自行部署到任意静态托管。': 'Download the HTML when you are happy with it and host it anywhere.'
 };

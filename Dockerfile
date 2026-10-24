@@ -16,10 +16,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build --chown=node:node /build/dist/standalone/ ./
 COPY --from=build --chown=node:node /build/lib/runtime.ts ./lib/runtime.ts
-COPY --from=build --chown=node:node /build/lib/alipay.ts ./lib/alipay.ts
 COPY --from=build --chown=node:node /build/drizzle/ ./drizzle/
 COPY --from=build --chown=node:node /build/scripts/check-runtime.mjs ./scripts/check-runtime.mjs
-COPY --from=build --chown=node:node /build/scripts/check-payment.mjs ./scripts/check-payment.mjs
 COPY --from=build --chown=node:node /build/deploy/start.mjs ./deploy/start.mjs
 RUN mkdir -p /data && chown node:node /data
 USER node

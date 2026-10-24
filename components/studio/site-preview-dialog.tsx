@@ -11,12 +11,12 @@ export type SitePreviewDialogProps = {
   html: string;
   device: 'desktop' | 'mobile';
   onDeviceChange: (device: 'desktop' | 'mobile') => void;
-  onCheckout: () => void;
+  onDownload: () => void;
   onCustomize?: () => void;
 };
 
 // Load the dialog machinery only when someone actually generates a preview.
-export default function SitePreviewDialog({open,onOpenChange,name,html,device,onDeviceChange,onCheckout,onCustomize}:SitePreviewDialogProps) {
+export default function SitePreviewDialog({open,onOpenChange,name,html,device,onDeviceChange,onDownload,onCustomize}:SitePreviewDialogProps) {
   const { t } = useStudioI18n();
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="site-preview-dialog">
@@ -37,7 +37,7 @@ export default function SitePreviewDialog({open,onOpenChange,name,html,device,on
       <div className="preview-dialog-footer">
         <button className="quiet-link" onClick={()=>onOpenChange(false)}>{t("返回调整资料")}</button>
         {onCustomize && <button className="btn outline" onClick={onCustomize}>{t("用模块继续制作")}</button>}
-        <button className="btn dark" onClick={onCheckout}>{t("查看费用并发布")}<ArrowRight size={17}/></button>
+        <button className="btn dark" onClick={onDownload}>{t("下载网站")}<ArrowRight size={17}/></button>
       </div>
     </DialogContent>
   </Dialog>;

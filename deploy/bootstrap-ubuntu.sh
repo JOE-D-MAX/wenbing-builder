@@ -94,7 +94,7 @@ if [[ -e deploy/.env ]]; then
   exit 2
 fi
 (set -o noclobber
-  printf 'DOMAIN=%s\nTLS_EMAIL=%s\nFORMA_SUPPORT_EMAIL=%s\nFORMA_SALES_ENABLED=false\nALIPAY_WAP_PAY_ENABLED=false\n' "$site_domain" "$site_email" "$site_email" > deploy/.env
+  printf 'DOMAIN=%s\nTLS_EMAIL=%s\n' "$site_domain" "$site_email" > deploy/.env
 )
 chmod 600 deploy/.env
 docker compose --env-file deploy/.env -f deploy/compose.yaml config --quiet

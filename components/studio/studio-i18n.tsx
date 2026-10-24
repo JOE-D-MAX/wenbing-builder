@@ -23,7 +23,6 @@ const pageTitles: Record<string, string> = {
   '/studio/blocks': '模块制作 · 文炳建站',
   '/studio/api': 'API 制作 · 文炳建站',
   '/studio/manual': '模板制作 · 文炳建站',
-  '/checkout': '订单与交付 · 文炳建站',
 };
 
 export function StudioLocaleProvider({ children }: { children: ReactNode }) {

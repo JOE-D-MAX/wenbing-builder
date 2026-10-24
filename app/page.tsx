@@ -24,8 +24,6 @@ export default function Home(){
  const [mobileNav,setMobileNav]=useState(false);
  useEffect(()=>{
    const params=new URLSearchParams(location.search);
-   const returnedId=params.get('order');
-   if(returnedId&&/^F[a-f0-9]{30}$/.test(returnedId)){location.replace('/checkout?order='+encodeURIComponent(returnedId));return;}
    const editingId=params.get('editDraft');
    if(editingId)location.replace('/studio/manual?editDraft='+encodeURIComponent(editingId));
  },[]);

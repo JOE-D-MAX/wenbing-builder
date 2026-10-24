@@ -36,7 +36,7 @@ assert.ok(Object.keys(translations).length > 300, 'The site dictionary is incomp
 function filesIn(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? filesIn(path.join(directory, entry.name)) : [path.join(directory, entry.name)]);
 }
-const files = [...filesIn(path.join(root, 'components/studio')), path.join(root, 'app/page.tsx'), path.join(root, 'app/checkout/page.tsx')].filter(file => file.endsWith('.tsx'));
+const files = [...filesIn(path.join(root, 'components/studio')), path.join(root, 'app/page.tsx')].filter(file => file.endsWith('.tsx'));
 const missing = new Set();
 for (const filename of files) {
   const ast = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

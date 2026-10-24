@@ -1,8 +1,8 @@
 # Wenbing Builder
 
-A website builder you host yourself. Drag blocks onto a canvas, edit them in place, publish the result. If you'd rather not start from a blank page, point it at an OpenAI-compatible API and let a model draft the first version, then keep editing block by block.
+A website builder you host yourself. Drag blocks onto a canvas, edit them in place, export a static site. If you'd rather not start from a blank page, point it at an OpenAI-compatible API and let a model draft the first version, then keep editing block by block.
 
-No build service and no account system. Drafts stay in the browser, published sites and orders go to whatever storage you configure.
+No build service and no account system. Drafts live in the browser, and the export is plain HTML you can host anywhere.
 
 ![The block editor](docs/images/workspace.jpg)
 
@@ -55,11 +55,11 @@ For a real deployment you need a Linux machine with Docker, a domain pointing at
 
 ```sh
 cp deploy/env.example deploy/.env
-# set DOMAIN, TLS_EMAIL and FORMA_SUPPORT_EMAIL
+# set DOMAIN and TLS_EMAIL
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 ```
 
-[deploy/README.md](deploy/README.md) covers health checks, backups and the Caddy configuration. The payment code ships disabled; you don't need it to use the editors.
+[deploy/README.md](deploy/README.md) covers health checks, backups and the Caddy configuration. There is no checkout or account system: you download the HTML and host it wherever you like.
 
 ## Checks
 
@@ -91,4 +91,6 @@ Portfolio blocks ship as generic placeholders. No personal site content or archi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU AGPL-3.0. Copyright (C) 2026 JOE-D-MAX.
+
+Use it, modify it, self-host it. If you run a modified version as a network service, the AGPL requires you to publish your changes under the same license.
