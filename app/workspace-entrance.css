@@ -1,0 +1,22 @@
+.workspace-entrance-section { position: relative; isolation: isolate; padding-bottom: 96px; }
+.workspace-entrance-section > .create-heading { position: relative; z-index: 1; }
+.workspace-entrance { display: flex; align-items: center; justify-content: space-between; gap: 32px; position: relative; overflow: hidden; padding: 50px 52px; border-radius: 20px; background: #e9eef9; color: #253451; transition: background .2s, transform .2s; }
+.workspace-entrance:hover { background: #e1e9f9; transform: translateY(-3px); }
+.workspace-entrance-label { display: inline-flex; align-items: center; gap: 9px; color: #526b9f; font-size: 14px; }
+.workspace-entrance-copy h3 { margin: 18px 0 14px; font-size: clamp(26px, 3vw, 38px); font-weight: 500; line-height: 1.35; letter-spacing: -.035em; }
+.workspace-entrance-copy p { color: #61718c; font-size: 14px; line-height: 1.9; }
+.workspace-entrance-note { display: block; margin-top: 28px; color: #647798; font-size: 11px; }
+.workspace-entrance-action { display: flex; align-items: center; gap: 20px; flex-shrink: 0; padding: 18px 22px; background: #253451; border-radius: 40px; color: #fff; font-size: 14px; }
+.workspace-entrance-action svg { transition: transform .2s; }
+.workspace-entrance:hover .workspace-entrance-action svg { transform: translate(3px,-3px); }
+.example-card { display: block; }
+@media (max-width: 800px) { .workspace-entrance { padding: 35px 30px; } .workspace-entrance-action { gap: 10px; padding: 15px 18px; font-size: 12px; } }
+@media (max-width: 560px) {
+  .workspace-entrance-section { padding-bottom: 55px; }
+  .workspace-entrance { flex-direction: column; align-items: stretch; gap: 24px; padding: 30px 24px; border-radius: 14px; }
+  .workspace-entrance-copy p { font-size: 12px; }
+  .workspace-entrance-copy h3 { font-size: 28px; }
+  .workspace-entrance-note { margin-top: 18px; }
+  .workspace-entrance-action { justify-content: space-between; font-size: 14px; padding: 13px 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .workspace-entrance, .workspace-entrance-action svg { transition: none; transform: none !important; } }

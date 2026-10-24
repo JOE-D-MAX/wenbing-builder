@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: wenbing-builder-preview
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: FORMA_SALES_ENABLED
+        value: "false"

@@ -1,0 +1,13 @@
+{
+  "installedClientDate": "2026-10-14",
+  "license": "MIT",
+  "skillSha256": "EA087C341BFB5B23195C7302027268EDE86DA802554C18A5C4896A6017B439F9",
+  "path": ".claude/skills/ui-ux-pro-max",
+  "ref": "7246805992a42b7bba37d4cac83b01416f0c6c44",
+  "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+  "repositoryUrl": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+  "stars": 135746,
+  "name": "ui-ux-pro-max",
+  "fileCount": 77,
+  "lastCommitUtc": "2026-10-12T11:08:03Z"
+}

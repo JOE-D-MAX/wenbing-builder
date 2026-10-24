@@ -1,0 +1,13 @@
+.bs-material-drag-preview { display:block; width:100%; padding:0; border:0; color:inherit; background:transparent; text-align:left; cursor:grab; touch-action:none; }
+.bs-material-drag-preview:active { cursor:grabbing; }
+.bs-material-drag-preview:focus-visible { outline:3px solid #2563eb; outline-offset:-3px; }
+.bs-material-drag-preview .bs-material-art { display:flex; }
+.bs-library-tabs { display:flex; flex-wrap:wrap; }
+.bs-library-tabs button { flex:1 0 auto; padding-left:7px!important; padding-right:7px!important; }
+.bs-design-fields { padding:14px 0; }
+.bs-design-fields > .bs-helper { margin:8px 0 16px; }
+.bs-design-entry { padding:14px; margin-bottom:12px; border-radius:8px; background:#f1f4f1; }
+.bs-design-entry .bs-field { margin-bottom:12px; }
+.bs-design-entry .bs-text-button { min-height:44px; }
+.bs-design-fields > .bs-button { min-height:44px; }
+@media (max-width:800px) { .bs-material-drag-preview { touch-action:pan-y; } .bs-material-card .bs-effect-apply { min-height:44px; } }

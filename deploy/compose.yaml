@@ -1,0 +1,74 @@
+name: wenbing-builder
+
+services:
+  app:
+    image: wenbing-builder:local
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      FORMA_DATA_DIR: /data
+      FORMA_MIGRATIONS_DIR: /app/drizzle
+      FORMA_PUBLIC_ORIGIN: https://${DOMAIN:?请在 deploy/.env 配置已购买并解析的域名}
+      FORMA_TRUST_PROXY: "true"
+      FORMA_SALES_ENABLED: ${FORMA_SALES_ENABLED:-false}
+      FORMA_SUPPORT_EMAIL: ${FORMA_SUPPORT_EMAIL:-}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+      ALIPAY_SELLER_ID: ${ALIPAY_SELLER_ID:-}
+      ALIPAY_PRIVATE_KEY: ${ALIPAY_PRIVATE_KEY:-}
+      ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY:-}
+      ALIPAY_WAP_PAY_ENABLED: ${ALIPAY_WAP_PAY_ENABLED:-false}
+    expose:
+      - "3000"
+    volumes:
+      - app_data:/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    init: true
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?请配置域名}
+      TLS_EMAIL: ${TLS_EMAIL:?请配置接收证书通知的邮箱}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:

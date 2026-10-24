@@ -1,0 +1,16 @@
+.site-language-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid #dce2ea;border-radius:8px;background:#f3f5f8;flex-shrink:0;isolation:isolate;order:99}
+.site-language-switch button{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;margin:0;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:#657184;font:500 12px/1.2 var(--font-ui),sans-serif;cursor:pointer;white-space:nowrap}
+.site-language-switch button[aria-pressed=true]{background:#fff;color:#18283e;box-shadow:0 1px 3px #20304412}
+.site-language-switch button:hover{color:#244e93}
+.site-language-switch button:focus-visible{outline:3px solid #5d84d4;outline-offset:2px}
+.studio-header>.site-language-switch{margin-left:auto}
+.bs-header-links>.site-language-switch{order:99}
+.manual-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-left:auto}
+.site-nav>.site-language-switch{margin-left:0}
+html[lang=en] .bs-header,html[lang=en] .bs-header-links{flex-wrap:wrap;height:auto;min-height:70px}
+html[lang=en] .bs-header{padding-top:8px;padding-bottom:8px}
+html[lang=en] .bs-library-tabs button{padding-left:5px;padding-right:5px;font-size:11px!important}
+html[lang=en] .bs-canvas-tools{flex-wrap:wrap}
+html[lang=en] .bs-helper,html[lang=en] .api-help{overflow-wrap:anywhere}
+@media(max-width:800px){.site-language-switch{padding:2px}.site-language-switch button{padding:7px;min-width:44px}.bs-header-links{gap:6px 12px}.studio-header{flex-wrap:wrap;gap:10px}.studio-header>.site-language-switch{margin-left:auto}}
+@media(max-width:560px){.site-nav:not(.manual-studio-nav){gap:6px;padding-inline:12px}.site-nav:not(.manual-studio-nav)>.brand{font-size:15px;gap:5px}.site-nav:not(.manual-studio-nav)>.nav-cta{padding-inline:9px;gap:4px}.site-nav:not(.manual-studio-nav)>.mobile-menu{width:32px;flex-shrink:0}.manual-studio-nav{flex-wrap:wrap;gap:8px;padding-block:10px}.manual-header-actions{gap:8px}.manual-header-actions .nav-cta{white-space:normal}.site-language-switch{max-width:100%}}

@@ -1,0 +1,49 @@
+.manual-studio {
+  min-height: 100dvh;
+  background: var(--secondary);
+}
+.manual-block-entry { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding-top:24px; font-size:14px; color:#5b606c; }
+.manual-block-entry a { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:10px 18px; border-radius:30px; background:#181716; color:#f5b544; }
+
+.manual-studio-nav {
+  justify-content: space-between;
+}
+
+.manual-studio-nav .nav-cta {
+  flex-shrink: 0;
+  min-height: 44px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.manual-studio .create-section {
+  padding-top: 60px;
+  border-top: 0;
+}
+
+.manual-studio .create-heading h1 {
+  margin-top: 15px;
+  font-size: clamp(28px, 3.4vw, 44px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -.04em;
+}
+
+.manual-studio .kind-tabs button {
+  min-height: 44px;
+}
+
+@media (max-width: 560px) {
+  .manual-studio-nav {
+    gap: 12px;
+  }
+
+  .manual-studio-nav .nav-cta {
+    padding-inline: 12px;
+    font-size: 11px;
+  }
+
+  .manual-studio .create-section {
+    padding-top: 38px;
+  }
+}

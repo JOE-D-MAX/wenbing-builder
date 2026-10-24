@@ -1,0 +1,3 @@
+# Caddy uses deploy/ as its build context. Never send payment settings or backups.
+*
+!Dockerfile.caddy

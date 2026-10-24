@@ -1,0 +1,22 @@
+{
+  admin off
+  email {$TLS_EMAIL}
+}
+
+{$DOMAIN} {
+  encode zstd gzip
+  request_body {
+    max_size 4MB
+  }
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+  reverse_proxy app:3000 {
+    header_up -cf-connecting-ip
+    header_up X-Forma-Client-IP {http.request.remote.host}
+    header_up X-Forwarded-For {http.request.remote.host}
+    header_up X-Forwarded-Proto https
+  }
+}

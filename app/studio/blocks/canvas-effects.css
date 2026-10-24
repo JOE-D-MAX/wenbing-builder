@@ -1,0 +1,68 @@
+/* Immediate canvas feedback; these styles do not enter exported sites. */
+.bs-mini-ambient { position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+.bs-mini-ambient > i { position:absolute; inset:-18%; display:block; background:radial-gradient(ellipse at 28% 38%,var(--accent),transparent 58%); opacity:.22; transform:translate3d(-6%,-3%,0) scale(1.02); animation:bs-ambient-drift-near 16s ease-in-out infinite alternate; animation-play-state:paused; }
+.bs-mini-ambient > i + i { background:radial-gradient(ellipse at 74% 64%,var(--block-secondary),transparent 59%); opacity:.7; transform:translate3d(5%,4%,0) scale(1.06); animation-name:bs-ambient-drift-far; animation-duration:22s; }
+.bs-mini.is-running > .bs-mini-ambient > i { animation-play-state:running; }
+@keyframes bs-ambient-drift-near { from { transform:translate3d(-6%,-3%,0) scale(1.02); opacity:.22; } to { transform:translate3d(9%,7%,0) scale(1.12); opacity:.34; } }
+@keyframes bs-ambient-drift-far { from { transform:translate3d(5%,4%,0) scale(1.06); opacity:.7; } to { transform:translate3d(-8%,-6%,0) scale(1.14); opacity:.5; } }
+@media(prefers-reduced-motion:reduce) { .bs-mini-ambient > i { animation:none!important; } }
+.bs-mini-reveal-stage { position:relative; z-index:1; width:100%; }
+.bs-mini-lift-stage { width:100%; }
+.bs-mini-nav .bs-mini-lift-stage { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.bs-mini-nav .bs-mini-lift-stage > strong { color:var(--block-text); font-size:14px; font-weight:500; }
+.bs-mini-nav.is-small .bs-mini-lift-stage > strong { font-size:10px; }
+.bs-mini-image-clip { overflow:hidden; }
+.bs-mini-image-clip img { transition:transform .7s ease; }
+.bs-mini-image-placeholder { gap:10px; align-content:center; font-size:11px; line-height:1.8; text-align:center; padding:12px; }
+.bs-mini.is-small .bs-mini-image-placeholder > span { display:none; }
+.bs-canvas-live .bs-mini-glow { inset:0; z-index:0; pointer-events:none; background:radial-gradient(ellipse 230px 180px at var(--canvas-light-x,50%) var(--canvas-light-y,42%),var(--accent),transparent 75%); opacity:.16; transition:opacity .3s; }
+.bs-canvas-live[data-lit=true] .bs-mini-glow { opacity:.32; }
+.bs-canvas-live .bs-mini-stars { z-index:0; pointer-events:none; opacity:.65; background:none; }
+.bs-canvas-live .bs-mini-stars::before,.bs-canvas-live .bs-mini-stars::after { content:''; position:absolute; inset:-24px; background-image:radial-gradient(1.2px 1.2px at 13px 19px,var(--block-text) 90%,transparent),radial-gradient(1px 1px at 61px 83px,var(--muted) 90%,transparent),radial-gradient(1.5px 1.5px at 117px 47px,var(--accent) 90%,transparent); background-size:137px 119px,193px 157px,251px 211px; }
+.bs-canvas-live .bs-mini-stars::after { opacity:.45; transform:translate(21px,25px); }
+.bs-canvas-live.is-running .bs-mini-stars::before { animation:bs-canvas-stars 12s ease-in-out infinite alternate; }
+.bs-canvas-live.is-running .bs-mini-stars::after { animation:bs-canvas-stars-far 15s ease-in-out infinite alternate; }
+.bs-canvas-fx-lift .bs-mini-lift-stage { transition:transform .45s ease; }
+.bs-canvas-live.has-entered.bs-canvas-fx-reveal:not([data-demo]) .bs-mini-reveal-stage,.bs-canvas-live.has-entered[data-demo=reveal] .bs-mini-reveal-stage { animation:bs-canvas-reveal .85s ease both; }
+.bs-canvas-live:not(.is-running) .bs-mini-reveal-stage { animation-play-state:paused; opacity:1!important; transform:none!important; }
+.bs-canvas-live.is-running[data-demo=lift] .bs-mini-lift-stage { animation:bs-canvas-lift 1.8s ease-in-out; }
+.bs-canvas-live.is-running[data-demo=zoom] .bs-mini-image { animation:bs-canvas-zoom 1.8s ease-in-out; }
+.bs-canvas-live.is-running[data-demo=spotlight]:not([data-lit=true]) .bs-mini-glow { animation:bs-canvas-light 2.2s ease-in-out; }
+.bs-canvas-live.is-running[data-demo=stars] .bs-mini-stars { animation:bs-canvas-star-appear 1s ease-out; }
+.bs-mini-curtain { position:absolute; inset:0; z-index:3; pointer-events:none; display:flex; overflow:hidden; }
+.bs-mini-curtain > i { width:50%; height:100%; background:var(--accent); transform:translateX(-102%); }
+.bs-mini-curtain > i + i { background:color-mix(in srgb,var(--accent) 88%,var(--block-bg)); transform:translateX(102%); }
+.bs-canvas-live.has-entered.bs-canvas-fx-curtain:not([data-demo]) .bs-mini-curtain > i:first-child,.bs-canvas-live.is-running[data-demo=curtain] .bs-mini-curtain > i:first-child { animation:bs-canvas-curtain-left 1.35s cubic-bezier(.65,0,.35,1) both; }
+.bs-canvas-live.has-entered.bs-canvas-fx-curtain:not([data-demo]) .bs-mini-curtain > i:last-child,.bs-canvas-live.is-running[data-demo=curtain] .bs-mini-curtain > i:last-child { animation:bs-canvas-curtain-right 1.35s cubic-bezier(.65,0,.35,1) both; }
+.bs-canvas-live:not(.is-running) .bs-mini-curtain { visibility:hidden; }
+@keyframes bs-canvas-curtain-left { 0%,15% { transform:translateX(0); } 100% { transform:translateX(-102%); } }
+@keyframes bs-canvas-curtain-right { 0%,15% { transform:translateX(0); } 100% { transform:translateX(102%); } }
+.bs-effect-tags > button { display:inline-flex; align-items:center; gap:5px; min-height:36px; border:1px solid #e0e6ef; border-radius:5px; padding:5px 9px; color:#536b8b; background:#f6f8fc; font-size:10px; }
+.bs-effect-tags > button:hover { color:#254a80; background:#eaf1fc; }
+.bs-effect-tags > button > span { color:#6e829d; font-size:9px; }
+@keyframes bs-canvas-stars { from { transform:translate(-4px,-8px); } to { transform:translate(18px,16px); } }
+@keyframes bs-canvas-stars-far { from { transform:translate(21px,25px); opacity:.3; } to { transform:translate(-4px,4px); opacity:.65; } }
+@keyframes bs-canvas-reveal { from { opacity:.12; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes bs-canvas-lift { 0%,100% { transform:translateY(0); } 35%,65% { transform:translateY(-10px); } }
+@keyframes bs-canvas-zoom { 0%,100% { transform:scale(1); } 35%,65% { transform:scale(1.08); } }
+@keyframes bs-canvas-light { 0%,100% { transform:translateX(0); opacity:.16; } 30% { transform:translateX(-15%); opacity:.32; } 70% { transform:translateX(15%); opacity:.32; } }
+@keyframes bs-canvas-star-appear { from { opacity:.1; } to { opacity:.65; } }
+@media(hover:hover) and (pointer:fine) { .bs-canvas-live.is-running.bs-canvas-fx-lift:hover .bs-mini-lift-stage { transform:translateY(-6px); } .bs-canvas-live.is-running.bs-canvas-fx-zoom:hover .bs-mini-image { transform:scale(1.04); } }
+@media(max-width:800px) { .bs-effect-tags > button { min-height:44px; font-size:11px; padding:7px 10px; } .bs-mini-nav .bs-mini-lift-stage > strong { font-size:13px; } .bs-mini-nav.is-small .bs-mini-lift-stage > strong { font-size:8px; } }
+@media(prefers-reduced-motion:reduce) { .bs-canvas-live *, .bs-canvas-live *::before, .bs-canvas-live *::after { animation:none!important; transition:none!important; } .bs-canvas-live .bs-mini-reveal-stage,.bs-canvas-live .bs-mini-lift-stage,.bs-canvas-live .bs-mini-image { opacity:1!important; transform:none!important; } }
+
+@media(max-width:1000px) and (min-width:801px) { .bs-mini-nav.is-small .bs-mini-lift-stage > strong { font-size:8px; } }
+
+.bs-canvas-image-picker { margin:12px; padding:18px; border:1px dashed #9db4d2; border-radius:8px; background:#f3f7fd; color:#405f87; }
+.bs-canvas-image-picker > div { display:flex; align-items:center; gap:9px; }
+.bs-canvas-image-picker strong { font-size:13px; font-weight:500; line-height:1.7; }
+.bs-canvas-image-picker p { margin:9px 0 14px; font-size:11px; line-height:1.8; color:#687e9a; }
+.bs-canvas-image-picker .bs-upload { background:#fff; border-style:solid; min-height:48px; }
+.bs-canvas-image-picker small { display:block; font-size:10px; line-height:1.8; margin-top:10px; color:#78869a; }
+.bs-canvas-stack.is-empty:has(#canvas-new-image) { display:block; }
+.bs-canvas-stack.is-empty:has(#canvas-new-image) .bs-drop-hint { display:none; }
+.bs-mini-extra-image { margin-top:20px; border-radius:6px; width:100%; }
+.bs-mini-surface .bs-mini-extra-image:first-child { margin-top:0; }
+.bs-mini-nav .bs-mini-lift-stage { flex-wrap:wrap; }
+.bs-mini-nav .bs-mini-extra-image { flex-basis:100%; }
+@media(max-width:800px) { .bs-canvas-image-picker { padding:14px; } .bs-canvas-image-picker strong { font-size:14px; } .bs-canvas-image-picker p { font-size:12px; } }
