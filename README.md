@@ -1,25 +1,10 @@
 # Wenbing Builder
 
-A self-hosted website builder with one-click website creation, visual block editing, and optional OpenAI-compatible generation. Start with a complete set of pages, then customize their content, backgrounds, colors, and effects.
-
-No account is required. Drafts live in the browser. The API and guided-template workflows also provide HTML downloads that you can host yourself.
+A modular website builder with one-click website creation.
 
 ## New: One-click website creation
 
-**Create a 1–10-page website in one click, then edit every page in the same continuous canvas.**
-
-In the block editor, choose **Entire site**, enter a **Page count** from 1 to 10, and click **Generate site**. Empty and newly added pages receive editable sections and navigation; existing content is preserved on pages that remain. Reducing the count removes the trailing pages, and one undo restores the previous project.
-
-- **Ready-to-edit pages** — generate layouts, backgrounds, and effects without an API key. All pages appear vertically in the existing canvas.
-- **Flexible colors** — by default, generated blocks share base colors and use varied effect accents. Turn on **Unified colors** to reveal presets and color pickers that update the site immediately.
-- **Continuous editing** — drag materials onto individual blocks, adjust content, and use undo/redo. Unified colors also apply to newly added blocks.
-- **Local persistence** — save the color mode and project in your browser, with protection against conflicting saves from other tabs.
-
-See the [update notes](CHANGELOG.md) for this release's features and bug fixes.
-
-![Earlier view of the block editor](docs/images/workspace.jpg)
-
-*Earlier editor view; the new generation and color controls are described above.*
+Create 1–10 editable pages in one click.
 
 ## Blocks
 
@@ -28,12 +13,6 @@ Background surfaces, navigation, hero, text, image cards, accordion lists, actio
 ## Effects that stay on their block
 
 Cursor glow, scroll reveal, image zoom, star drift, video backgrounds. Each one attaches to a block instead of the whole page, so adding a second effect doesn't overwrite the first. All of them back off when the system asks for reduced motion.
-
-## Your model, your key
-
-Any HTTPS endpoint that speaks `chat/completions`. The key lives in page memory, travels through the server to your endpoint, and is never written to the database. Costs and limits are whatever your provider charges.
-
-Generated HTML can be downloaded or sent to the block editor as an isolated static HTML block. Add native blocks around it to extend the page.
 
 ## Chinese and English
 
@@ -61,7 +40,7 @@ Open <http://127.0.0.1:3000>.
 | `/` | landing page |
 | `/studio` | pick a workflow |
 | `/studio/blocks` | block editor |
-| `/studio/api` | generate from a prompt |
+| `/studio/api` | API workspace |
 | `/studio/manual` | template-guided |
 
 ## Deploying
@@ -102,7 +81,7 @@ vendor/              third-party sources, notices and licenses
 
 ## Credits
 
-Built on React, Next, Vite (through vinext), dnd-kit, Radix, i18next and Drizzle. The prompt guidance in the API workflow is adapted from UI/UX Pro Max and Design Taste Frontend; their notices and license texts are kept under [vendor](vendor/).
+Built on React, Next, Vite (through vinext), dnd-kit, Radix, i18next and Drizzle. Third-party notices and license texts are kept under [vendor](vendor/).
 
 Portfolio blocks ship as generic placeholders. No personal site content or archived media is bundled with this repository.
 
