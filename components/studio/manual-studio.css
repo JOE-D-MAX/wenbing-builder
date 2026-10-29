@@ -47,3 +47,14 @@
     padding-top: 38px;
   }
 }
+
+.manual-studio .draft-conflict {
+  padding: 16px;
+  border: 1px solid #d4c5b7;
+  border-radius: 12px;
+  background: #fbf5ed;
+  color: #543d2d;
+}
+.manual-studio .draft-conflict p { margin: 0 0 12px; line-height: 1.6; }
+.manual-studio .draft-conflict .draft-toolbar { flex-wrap: wrap; }
+.manual-studio .draft-conflict button { min-height: 44px; }

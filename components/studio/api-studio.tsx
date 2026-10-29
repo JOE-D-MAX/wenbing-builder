@@ -125,9 +125,12 @@ export function ApiStudio() {
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; requestCancellation(requestId); abort.abort(); }, 100000);
     try {
+      // Only the unchanged, explicitly chosen preset gets provider-specific options.
+      // Edited and manually entered addresses always retain the custom endpoint.
+      const selectedPreset = AI_PROVIDERS.find(item => item.id === preset && item.baseUrl === baseUrl.trim());
       const response = await fetch('/api/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'custom', baseUrl: baseUrl.trim(), model: model.trim(), tokenParameter, apiKey: apiKey.trim(), prompt: prompt.trim(), requestId }),
+        body: JSON.stringify({ provider: selectedPreset?.id ?? 'custom', ...(!selectedPreset ? { baseUrl: baseUrl.trim() } : {}), model: model.trim(), tokenParameter, apiKey: apiKey.trim(), prompt: prompt.trim(), requestId }),
         cache: 'no-store', signal: abort.signal,
       });
       const data = await response.json().catch(() => null) as (Result & {error?: string}) | null;

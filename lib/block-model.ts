@@ -2,12 +2,15 @@ import { secureRandomUUID } from './client-compat';
 
 export type BlockKind = 'surface' | 'nav' | 'hero' | 'text' | 'project' | 'accordion' | 'contact' | 'signature' | 'embed';
 export type EffectId = 'spotlight' | 'reveal' | 'lift' | 'zoom' | 'stars' | 'curtain' | 'ambient';
+// Keep grid readable in older drafts; cleanAppearance resolves it to a solid background.
 export type BackgroundId = 'solid' | 'gradient' | 'grid' | 'dots' | 'halo' | 'video';
 export type BackgroundVideo = { src: string; poster?: string; dim: number; paused?: boolean };
 export const MAX_BACKGROUND_VIDEO_BYTES = 2 * 1024 * 1024;
 export const DESIGN_IDS = ['editorial-nav', 'editorial-hero', 'editorial-intro', 'editorial-metrics', 'editorial-timeline', 'editorial-project', 'editorial-steps', 'editorial-contact'] as const;
 export type DesignId = (typeof DESIGN_IDS)[number];
 export type BlockAppearance = { background: BackgroundId; backgroundColor: string; secondaryColor: string; textColor: string; accentColor: string };
+export type BlockColors = Pick<BlockAppearance, 'backgroundColor' | 'secondaryColor' | 'textColor' | 'accentColor'>;
+export type ProjectColorSettings = { unified: boolean; colors: BlockColors };
 export type BlockLink = { type: 'none' | 'page' | 'section' | 'url' | 'modal'; target: string };
 export type SiteBlock = {
   id: string; kind: BlockKind; title: string; text: string; eyebrow: string;
@@ -21,16 +24,15 @@ export type SiteBlock = {
   backgroundVideo?: BackgroundVideo;
 };
 export type BlockPage = { id: string; title: string; blocks: SiteBlock[] };
-export type BlockProject = { version: 1; name: string; accent: string; pages: BlockPage[]; layout?: 'portfolio' };
+export type BlockProject = { version: 1; name: string; accent: string; pages: BlockPage[]; layout?: 'portfolio'; colorSettings?: ProjectColorSettings };
 export const BLOCK_STORAGE_KEY = 'wenbing-block-project-v1';
 export const BLOCK_IMPORT_KEY = 'wenbing-block-html-import-v1';
 export const MAX_EMBED_HTML_CHARS = 2000000;
 export const MAX_BLOCKS = 24;
-export const MAX_PAGES = 8;
+export const MAX_PAGES = 10;
 export const BACKGROUND_LIBRARY: { id: BackgroundId; name: string; description: string }[] = [
   { id: 'solid', name: '纯色背景', description: '用一块颜色承托内容' },
   { id: 'gradient', name: '柔和渐变', description: '让两种背景色自然过渡' },
-  { id: 'grid', name: '细线网格', description: '以规则线条增加空间感' },
   { id: 'dots', name: '点阵底纹', description: '为背景增加轻微纹理' },
   { id: 'halo', name: '雾光背景', description: '柔和静态光晕，让深浅配色产生空间感' },
   { id: 'video', name: '视频背景', description: '让视频铺在内容后方，可暂停并调整遮罩' },
@@ -45,10 +47,22 @@ export const PALETTE_LIBRARY: { id: string; name: string; appearance: BlockAppea
 ];
 const NEUTRAL_ACCENT = '#2563eb';
 function safeColor(value: unknown, fallback: string): string { return typeof value === 'string' && /^#[a-fA-F0-9]{6}$/.test(value) ? value : fallback; }
+/** Optional project settings never make older drafts opt into unified colors. */
+export function cleanProjectColorSettings(value: unknown, fallback: BlockColors = PALETTE_LIBRARY[0].appearance): ProjectColorSettings | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const colors = input.colors && typeof input.colors === 'object' && !Array.isArray(input.colors) ? input.colors as Record<string, unknown> : {};
+  return { unified: input.unified === true, colors: {
+    backgroundColor: safeColor(colors.backgroundColor, fallback.backgroundColor),
+    secondaryColor: safeColor(colors.secondaryColor, fallback.secondaryColor),
+    textColor: safeColor(colors.textColor, fallback.textColor),
+    accentColor: safeColor(colors.accentColor, fallback.accentColor),
+  } };
+}
 function cleanAppearance(value: unknown, fallback: BlockAppearance): BlockAppearance {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   return {
-    background: BACKGROUND_LIBRARY.some(item => item.id === input.background) ? input.background as BackgroundId : fallback.background,
+    background: input.background === 'grid' ? 'solid' : BACKGROUND_LIBRARY.some(item => item.id === input.background) ? input.background as BackgroundId : fallback.background,
     backgroundColor: safeColor(input.backgroundColor, fallback.backgroundColor), secondaryColor: safeColor(input.secondaryColor, fallback.secondaryColor),
     textColor: safeColor(input.textColor, fallback.textColor), accentColor: safeColor(input.accentColor, fallback.accentColor),
   };
@@ -66,16 +80,20 @@ export function appearanceStyle(value: BlockAppearance): Record<string, string> 
   const { background, backgroundColor, secondaryColor, textColor, accentColor } = appearance;
   const line = `color-mix(in srgb, ${textColor} 12%, transparent)`;
   const backgroundImage = background === 'gradient' ? `linear-gradient(135deg, ${backgroundColor}, ${secondaryColor})`
-    : background === 'grid' ? `linear-gradient(${line} 1px, transparent 1px), linear-gradient(90deg, ${line} 1px, transparent 1px)`
     : background === 'dots' ? `radial-gradient(${line} 1px, transparent 1px)`
     : background === 'halo' ? `radial-gradient(ellipse at 78% 24%, color-mix(in srgb, ${accentColor} 16%, transparent), transparent 57%), radial-gradient(ellipse at 18% 90%, ${secondaryColor}, transparent 62%)` : 'none';
   const channels = [1, 3, 5].map(index => parseInt(accentColor.slice(index, index + 2), 16) / 255).map(channel => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4);
   const luminance = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+  const darkTextLuminance = (9 / 255) / 12.92;
+  const whiteContrast = 1.05 / (luminance + .05);
+  const darkContrast = (Math.max(luminance, darkTextLuminance) + .05) / (Math.min(luminance, darkTextLuminance) + .05);
+  // The dark foreground is #090909, not pure black; compare its actual contrast.
+  const accentText = whiteContrast >= 4.5 && whiteContrast >= darkContrast ? '#ffffff' : darkContrast >= 4.5 ? '#090909' : '#000000';
   return {
-    backgroundColor, backgroundImage, backgroundSize: background === 'grid' ? '32px 32px' : background === 'dots' ? '20px 20px' : 'auto', color: textColor,
+    backgroundColor, backgroundImage, backgroundSize: background === 'dots' ? '20px 20px' : 'auto', color: textColor,
     '--accent': accentColor, '--block-text': textColor, '--block-bg': backgroundColor, '--block-secondary': secondaryColor,
     '--muted': `color-mix(in srgb, ${textColor} 72%, ${backgroundColor})`, '--block-border': `color-mix(in srgb, ${textColor} 18%, transparent)`,
-    '--accent-text': luminance > .179 ? '#090909' : '#ffffff',
+    '--accent-text': accentText,
   };
 }
 export const BLOCK_LIBRARY: { kind: BlockKind; name: string; description: string }[] = [
@@ -154,7 +172,7 @@ export function cleanBackgroundVideo(value: unknown): BackgroundVideo | undefine
   const dim = typeof input.dim === 'number' && Number.isFinite(input.dim) ? Math.max(0, Math.min(.8, input.dim)) : .35;
   return { src, ...(poster ? { poster } : {}), dim, ...(typeof input.paused === 'boolean' ? { paused: input.paused } : {}) };
 }
-function text(value: unknown, max: number) { return typeof value === 'string' ? value.slice(0, max) : ''; }
+function text(value: unknown, max: number) { return typeof value === 'string' ? value.slice(0, max).replace(/[\uD800-\uDBFF]$/, '') : ''; }
 function identifier(value: unknown) { return typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value) ? value : ''; }
 export function parseBlockProject(value: unknown): BlockProject {
   if (!value || typeof value !== 'object') throw new Error('这不是有效的模块项目。');
@@ -179,5 +197,7 @@ export function parseBlockProject(value: unknown): BlockProject {
       return { id: unique(b.id), kind, title: text(b.title, 160), text: text(b.text, 5000), eyebrow: text(b.eyebrow, 100), button: text(b.button, 60), theme, image: safeBlockImage(text(b.image, 2000001)), effects: Array.isArray(b.effects) ? [...new Set(b.effects.filter((x): x is EffectId => EFFECT_LIBRARY.some(e => e.id === x)))] : [], link: { type: linkType, target: linkType === 'url' ? safeBlockUrl(text(link.target, 2000)) : text(link.target, 80) }, items: Array.isArray(b.items) ? b.items.slice(0, 12).map(x => ({ title: text(x?.title, 100), text: text(x?.text, 3000) })) : [], ...(kind === 'embed' ? { html: text(b.html, MAX_EMBED_HTML_CHARS) } : {}), ...(appearance ? { appearance } : {}), ...(b.span === 'half' || b.span === 'full' ? { span: b.span } : {}), ...(['section-heading', 'about', 'business', 'detail'].includes(b.presentation as string) ? { presentation: b.presentation as SiteBlock['presentation'] } : {}), ...(typeof b.highlight === 'string' ? { highlight: text(b.highlight, 160) } : {}), ...(DESIGN_IDS.includes(b.design as DesignId) ? { design: b.design as DesignId } : {}), ...(backgroundVideo ? { backgroundVideo } : {}) };
     }) };
   });
-  return { version: 1, name: text(input.name, 100) || '未命名网站', accent: safeColor(input.accent, NEUTRAL_ACCENT), pages, ...(input.layout === 'portfolio' ? { layout: 'portfolio' as const } : {}) };
+  const firstNative = pages.flatMap(page => page.blocks).find(block => block.kind !== 'embed');
+  const colorSettings = cleanProjectColorSettings(input.colorSettings, firstNative ? getBlockAppearance(firstNative, safeColor(input.accent, NEUTRAL_ACCENT)) : PALETTE_LIBRARY[0].appearance);
+  return { version: 1, name: text(input.name, 100) || '未命名网站', accent: safeColor(input.accent, NEUTRAL_ACCENT), pages, ...(input.layout === 'portfolio' ? { layout: 'portfolio' as const } : {}), ...(colorSettings ? { colorSettings } : {}) };
 }

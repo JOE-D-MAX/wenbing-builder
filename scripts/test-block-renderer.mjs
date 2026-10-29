@@ -12,13 +12,27 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context);
 } });
 const { renderBlockProject } = await import('../lib/block-renderer.ts');
-const { createBlock, createStarterProject, PALETTE_LIBRARY } = await import('../lib/block-model.ts');
+const { createBlock, createStarterProject, MAX_BLOCKS, PALETTE_LIBRARY } = await import('../lib/block-model.ts');
 
 const project = createStarterProject();
 const blankOutput = renderBlockProject(project);
 assert(!blankOutput.includes('<section '), 'new projects export a blank canvas');
 assert(!blankOutput.includes('这一页，留给下一个想法'), 'empty pages contain no reference copy');
 assert(blankOutput.includes('<body style="background:#ffffff;color:#172033"'), 'new pages do not inherit a black frame');
+const emptyColoredProject = createStarterProject();
+emptyColoredProject.colorSettings = { unified: true, colors: { backgroundColor: '#172839', secondaryColor: '#28394a', textColor: '#f8f9fa', accentColor: '#d5a734' } };
+const emptyColoredBefore = structuredClone(emptyColoredProject);
+const emptyColoredOutput = renderBlockProject(emptyColoredProject);
+assert(emptyColoredOutput.includes('<body style="background:#172839;color:#f8f9fa"'), 'empty pages use the saved unified background and text colors');
+assert(emptyColoredOutput.includes('style="--page-bg:#172839;--page-text:#f8f9fa"'));
+assert(!emptyColoredOutput.includes('<section '), 'a page color cannot add an authored block');
+assert.deepEqual(emptyColoredProject, emptyColoredBefore, 'rendering an empty colored page does not alter its draft');
+const importFirstProject = createStarterProject();
+const importedFirst = { ...createBlock('embed'), html: '<p>Imported content</p>' };
+const nativeFirst = createBlock('hero');
+nativeFirst.appearance = { ...PALETTE_LIBRARY.find(palette => palette.id === 'mint').appearance };
+importFirstProject.pages[0].blocks = [importedFirst, nativeFirst];
+assert(renderBlockProject(importFirstProject).includes('<body style="background:#eaf5ef;color:#173c2e"'), 'an imported iframe does not override the surrounding native page palette');
 project.pages[0].id = 'home';
 project.pages[0].blocks = ['nav', 'hero', 'project', 'signature'].map(createBlock);
 project.pages[0].blocks.forEach((block, index) => { block.id = 'block-' + index; });
@@ -64,10 +78,50 @@ assert(!output.includes('https://'), 'default website needs no remote assets');
 assert(!output.includes('持续探索中'));
 assert(!output.includes('保持好奇，继续前行'));
 
+// Multi-page navigation must not require deleting a block from a full page.
+const navigationProject = createStarterProject();
+navigationProject.pages = Array.from({ length: 8 }, (_, index) => ({
+  id: 'route-' + index,
+  title: index === 7 ? '<script>private()</script> & "page"' : '网页 ' + (index + 1),
+  blocks: index === 0 ? Array.from({ length: MAX_BLOCKS }, () => createBlock('text')) : [],
+}));
+navigationProject.pages[1].blocks = [{ ...createBlock('embed'), html: '<p>Own imported page</p>' }];
+navigationProject.pages[2].blocks = [createBlock('nav'), createBlock('hero')];
+navigationProject.pages[3].blocks = [{ ...createBlock('nav'), design: 'editorial-nav', items: [{ title: 'Custom link', text: navigationProject.pages[0].blocks[0].id }] }];
+const navigationBefore = structuredClone(navigationProject);
+const pageOf = (html, id) => html.split('<main id="page:' + id + '"')[1]?.split('</main>')[0];
+for (const layout of [undefined, 'portfolio']) {
+  const linkedProject = { ...navigationProject, ...(layout ? { layout } : {}) };
+  const linkedOutput = renderBlockProject(linkedProject, { pageId: 'route-7' });
+  assert(linkedOutput.includes('data-start="route-7"'));
+  assert(!pageOf(linkedOutput, 'route-7').split('>')[0].includes(' hidden'), 'preview opens the requested page');
+  for (const page of linkedProject.pages) {
+    const html = pageOf(linkedOutput, page.id);
+    assert(html, 'every page is exported');
+    const automatic = html.match(/<nav class="page-switcher"[^>]*>([\s\S]*?)<\/nav>/)?.[1];
+    if (page.id === 'route-2' && !layout) {
+      assert.equal(automatic, undefined, 'ordinary page navigation is not duplicated');
+    } else {
+      assert(automatic, 'full, empty, imported and section-only pages receive navigation');
+      for (const target of linkedProject.pages) {
+        assert(automatic.includes('href="#/' + target.id + '" data-page-link="' + target.id + '"'), 'all eight destinations are reachable');
+      }
+      assert.equal((automatic.match(/aria-current="page"/g) || []).length, 1, 'one current page per switcher');
+      assert(automatic.includes('&lt;script&gt;private()&lt;/script&gt; &amp; &quot;page&quot;'), 'page names are escaped');
+      assert(!automatic.includes('<script>'), 'page names cannot inject markup');
+    }
+    assert.equal((html.match(/data-block="/g) || []).length, page.blocks.length, 'fallback consumes no editable block capacity');
+  }
+  assert(pageOf(linkedOutput, 'route-3').includes('<nav class="ed-nav"'), 'custom section navigation is retained');
+  if (layout) assert(pageOf(linkedOutput, 'route-2').includes('<nav class="pf-nav"'), 'portfolio navigation is retained');
+}
+assert.deepEqual(navigationProject, navigationBefore, 'navigation export does not change authored blocks or IDs');
+assert(!blankOutput.includes('data-auto-page-nav'), 'single-page output remains unchanged');
+
 const surfaceProject = createStarterProject();
 const surface = createBlock('surface');
 surface.id = 'color-surface';
-surface.appearance = { ...PALETTE_LIBRARY.find(item => item.id === 'mint').appearance, background: 'grid' };
+surface.appearance = { ...PALETTE_LIBRARY.find(item => item.id === 'mint').appearance, background: 'gradient' };
 surfaceProject.pages[0].blocks.push(surface);
 let surfaceOutput = renderBlockProject(surfaceProject);
 assert(surfaceOutput.includes('class="site-block block-surface theme-light"'));
@@ -98,7 +152,7 @@ const imageBlocks = ['surface', 'text', 'nav', 'hero', 'accordion', 'contact', '
   block.link = { type: 'url', target: 'https://example.test/own-content' };
   block.image = pixelImage;
   block.effects = ['zoom', 'stars'];
-  block.appearance = { ...PALETTE_LIBRARY.find(item => item.id === 'mint').appearance, background: 'grid' };
+  block.appearance = { ...PALETTE_LIBRARY.find(item => item.id === 'mint').appearance, background: 'gradient' };
   return block;
 });
 imageProject.pages[0].blocks = imageBlocks;

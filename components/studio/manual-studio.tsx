@@ -8,6 +8,7 @@ import { DesignControls } from '@/components/studio/design-controls';
 import { withRequestTimeout, secureRandomUUID, decodeUploadImage, type DecodedImage } from '@/lib/client-compat';
 import './manual-studio.css';
 import { continueWithBlocks } from '@/lib/block-transfer';
+import { createDraftPersistence, type DraftPersistence } from '@/lib/draft-persistence';
 
 type Kind='personal'|'business'|'restaurant';
 type Preview={name:string;kind:Kind;layout:string;theme:string;sectionCount:number};
@@ -45,11 +46,14 @@ export default function ManualStudio(){
  const [previewHtml,setPreviewHtml]=useState(''),[previewOpen,setPreviewOpen]=useState(false),[device,setDevice]=useState<'desktop'|'mobile'>('desktop');
  const [PreviewDialog,setPreviewDialog]=useState<ComponentType<SitePreviewDialogProps>|null>(null);
  const [draftLoaded,setDraftLoaded]=useState(false),[draftStatus,setDraftStatus]=useState(''),[undo,setUndo]=useState<Brief|null>(null),[uploading,setUploading]=useState(false);
+ const [draftConflict,setDraftConflict]=useState(false);
+ const draftPersistence=useRef<DraftPersistence|null>(null),briefRef=useRef<Brief>(empty);
  const upload=useRef<HTMLInputElement>(null),importFile=useRef<HTMLInputElement>(null),imageRequest=useRef(0),requestKey=useRef(''),submittedBrief=useRef<Brief|null>(null),revision=useRef(0),draftInitialized=useRef(false);
  function edit(change:Partial<Brief>){
    revision.current++;
    if('image' in change){imageRequest.current++;setUploading(false);}
-   setBrief(b=>({...b,...change}));setPreview(null);setPreviewHtml('');submittedBrief.current=null;requestKey.current='';setError('');setNotice('');setDraftStatus('正在保存…');
+   const next={...briefRef.current,...change};briefRef.current=next;draftPersistence.current?.stage(draftBackup(next));
+   setBrief(next);setPreview(null);setPreviewHtml('');submittedBrief.current=null;requestKey.current='';setError('');setNotice('');setDraftStatus('正在保存…');
  }
  useEffect(()=>{
    if(draftInitialized.current)return;
@@ -57,25 +61,39 @@ export default function ManualStudio(){
    const savedUndo=stored('forma-brief-undo-v1');
    if(savedUndo)try{setUndo(readDraftBackup(savedUndo));}catch{}
    let restored:Brief|null=null;
-   const saved=stored('forma-brief-v3')||stored('forma-brief-v2');
-   if(saved)try{restored=readDraftBackup(saved);setBrief(restored);setDraftStatus('已恢复上次填写的资料');}catch{setNotice('上次资料无法读取，可以导入已下载的资料备份。');}
+   const currentRaw=stored('forma-brief-v3'),saved=currentRaw||stored('forma-brief-v2');
+   draftPersistence.current=createDraftPersistence({getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value)},'forma-brief-v3',currentRaw);
+   if(saved)try{restored=readDraftBackup(saved);briefRef.current=restored;setBrief(restored);setDraftStatus('已恢复上次填写的资料');}catch{setNotice('上次资料无法读取，可以导入已下载的资料备份。');}
     const params=new URLSearchParams(location.search);
     const example=params.get('example');
    if(example==='restaurant'||example==='personal'||example==='business'){
      const previous=restored||{...empty};
-     remember('forma-brief-undo-v1',draftBackup(previous));setUndo(previous);setBrief({...examples[example]});
+     remember('forma-brief-undo-v1',draftBackup(previous));setUndo(previous);briefRef.current={...examples[example]};setBrief(briefRef.current);draftPersistence.current.stage(draftBackup(briefRef.current));
      setNotice('已填入所选方向的示例。原有资料仍可撤销恢复，发布前请改成自己的真实介绍。');
      window.history.replaceState(null,'','/studio/manual');
    }
    setDraftLoaded(true);
  },[]);
+ function saveDraft(){
+   if(!draftPersistence.current?.hasPending())return;
+   try{const result=draftPersistence.current.save();if(result==='conflict'){setDraftConflict(true);setDraftStatus('尚未保存');}else setDraftStatus('已自动保存在此浏览器');}
+   catch{setDraftStatus('浏览器空间不足，请下载资料备份');}
+ }
+ function reloadLatestDraft(){
+   if(draftPersistence.current?.hasPending()&&!window.confirm(t('重新加载将丢弃本页未保存的修改。建议先下载当前副本，是否继续？')))return;
+   draftPersistence.current?.discardPending();window.location.reload();
+ }
  useEffect(()=>{
-   if(!draftLoaded)return;
-   const save=()=>remember('forma-brief-v3',draftBackup(brief));
-   const timer=setTimeout(()=>setDraftStatus(save()?'已自动保存在此浏览器':'浏览器空间不足，请下载资料备份'),600);
-   window.addEventListener('pagehide',save);
-   return()=>{clearTimeout(timer);window.removeEventListener('pagehide',save);};
+   if(!draftLoaded||!draftPersistence.current?.hasPending())return;
+   const timer=setTimeout(saveDraft,600);return()=>clearTimeout(timer);
  },[brief,draftLoaded]);
+ useEffect(()=>{
+   const flush=()=>{try{draftPersistence.current?.save();}catch{/* Preserve pending edits for recovery. */}};
+   const beforeUnload=(event:BeforeUnloadEvent)=>{flush();if(draftPersistence.current?.hasPending()){event.preventDefault();event.returnValue='';}};
+   const changed=(event:StorageEvent)=>{if(event.storageArea!==localStorage||(event.key!==null&&event.key!=='forma-brief-v3'))return;try{if(draftPersistence.current?.observeExternalChange()){setDraftConflict(true);setDraftStatus('尚未保存');}}catch{setDraftStatus('尚未保存');}};
+   window.addEventListener('pagehide',flush);window.addEventListener('beforeunload',beforeUnload);window.addEventListener('storage',changed);
+   return()=>{window.removeEventListener('pagehide',flush);window.removeEventListener('beforeunload',beforeUnload);window.removeEventListener('storage',changed);flush();};
+ },[]);
  async function generate(e:React.FormEvent){
    e.preventDefault();if(busy||uploading)return;setBusy(true);setError('');setNotice('');
    const version=revision.current,snapshot={...brief};
@@ -115,6 +133,9 @@ export default function ManualStudio(){
     const a=document.createElement('a');a.href=url;a.download=(preview.name||'website')+'.html';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
   }
  function openBlocks(){try{continueWithBlocks(previewHtml,preview?.name||'我的模板网站');}catch(reason){setPreviewOpen(false);setError(reason instanceof Error?reason.message:'暂时无法打开模块工作区。');}}
+ // Fragment links in srcdoc resolve against the parent URL; adapt only the iframe copy.
+ // Downloads and transfers keep the original document so standalone links remain valid.
+ const previewDocument=previewHtml.replace(/href="#/g,'href="about:srcdoc#');
  return <main className="manual-studio">
   <header className="site-nav manual-studio-nav">
    <a className="brand" href="/" aria-label={t("文炳建站首页")}><BrandMark/>{t("文炳建站")}<span>Wenbing</span></a>
@@ -137,13 +158,15 @@ export default function ManualStudio(){
      <input type="file" ref={upload} hidden accept="image/jpeg,image/png,image/webp" onChange={e=>void photo(e.target.files?.[0])}/><button type="button" className="upload-box" onClick={()=>upload.current?.click()}>{brief.image?<img src={brief.image} alt={t("已选择的介绍图片")}/>:<ImagePlus size={23}/>}<span><strong>{t(uploading?'图片处理中…':brief.image?'图片已准备好 · 点击替换':'加入一张自己的图片')}</strong><small>{t("门店、作品或肖像 · JPG / PNG / WebP · 8 MB 内")}</small></span><PlusIcon/></button>{brief.image&&<button type="button" className="remove-image" onClick={()=>edit({image:''})}>{t("移除图片")}</button>}
      <button className="btn dark full" disabled={busy||uploading}>{busy||uploading?<LoaderCircle className="spin" size={18}/>:<Sparkles size={18}/>} {t(uploading?'正在处理图片…':busy?'正在生成模板预览…':'免费生成网站预览')} <ArrowRight size={18}/></button><p className="form-note">{t("生成后可下载 HTML 文件，自行部署到任意静态托管。")}</p>
      <div className="draft-toolbar"><button type="button" onClick={()=>saveFile(draftBackup(brief),'文炳建站-网站资料.json')}>{t("下载资料")}</button><button type="button" onClick={()=>importFile.current?.click()}>{t("导入资料")}</button><button type="button" onClick={()=>sample(brief.kind)}>{t("填入示例")}</button><button type="button" onClick={()=>replaceBrief({...empty,kind:brief.kind},'已清空填写资料，可以撤销。')}>{t("清空资料")}</button></div><input type="file" ref={importFile} hidden accept=".json,application/json" onChange={e=>void importDraft(e.target.files?.[0])}/><p className="draft-status" role="status">{t(draftStatus)}<span>{t("· 资料备份请自行保管")}</span></p>{undo&&<div className="draft-undo"><span>{t("上一次替换前的资料还在。")}</span><button type="button" onClick={()=>{edit(undo);setUndo(null);forget('forma-brief-undo-v1');setNotice('已恢复替换前的资料。');}}>{t("撤销替换")}</button></div>}
+     {draftStatus==='浏览器空间不足，请下载资料备份'&&<div className="draft-toolbar"><button type="button" onClick={saveDraft}>{t('重试保存')}</button></div>}
+     {draftConflict&&<div className="draft-conflict" role="alert"><p>{t('另一页面已更新这份资料，本页已暂停自动保存。请下载资料副本，再重新加载最新资料。')}</p><div className="draft-toolbar"><button type="button" onClick={()=>saveFile(draftBackup(briefRef.current),'wenbing-brief-recovery.json')}>{t('下载当前副本')}</button><button type="button" onClick={reloadLatestDraft}>{t('重新加载最新草稿')}</button></div></div>}
     </form>
-    <aside className="preview-aside"><div className="preview-top"><span>{t("你的网站预览")}</span><span className="live-dot"/><small>{t(preview?'免费预览已就绪':'等待你的故事')}</small></div>{preview?<><div className="template-frame"><iframe title={t("你的模板网站预览")} srcDoc={previewHtml} sandbox="" referrerPolicy="no-referrer"/><span>{t("PREVIEW / 尚未发布")}</span></div><div className="preview-controls"><button className="btn outline" onClick={()=>setPreviewOpen(true)}>{t("放大预览")}<ArrowUpRight size={16}/></button><button className="btn dark" onClick={downloadPreview}>{t("下载网站")}<ArrowRight size={16}/></button></div></>:<div className="locked-preview"><Sample kind={brief.kind} soft/><div className="lock-overlay"><span className="lock-circle"><Sparkles size={25}/></span><h3>{t("一个好故事，")}<br/>{t("就是一个好开始。")}</h3><p>{t("填入介绍，免费生成你的完整页面。")}<br/>{t("换个配色，或者再加一张图片。")}</p></div></div>}<div className="preview-foot"><span>{preview?t(themeNames[preview.theme] || preview.theme)+' · '+t(layoutNames[preview.layout] || preview.layout):t('先预览，满意再发布')}</span><span>DESKTOP + MOBILE</span></div><div className="preview-tips"><span><Check size={14}/>{t("完整页面预览")}</span><span><Check size={14}/>{t("资料自动保存")}</span><span><Check size={14}/>{t("电脑手机适配")}</span></div></aside>
+    <aside className="preview-aside"><div className="preview-top"><span>{t("你的网站预览")}</span><span className="live-dot"/><small>{t(preview?'免费预览已就绪':'等待你的故事')}</small></div>{preview?<><div className="template-frame"><iframe title={t("你的模板网站预览")} srcDoc={previewDocument} sandbox="" referrerPolicy="no-referrer"/><span>{t("PREVIEW / 尚未发布")}</span></div><div className="preview-controls"><button className="btn outline" onClick={()=>setPreviewOpen(true)}>{t("放大预览")}<ArrowUpRight size={16}/></button><button className="btn dark" onClick={downloadPreview}>{t("下载网站")}<ArrowRight size={16}/></button></div></>:<div className="locked-preview"><Sample kind={brief.kind} soft/><div className="lock-overlay"><span className="lock-circle"><Sparkles size={25}/></span><h3>{t("一个好故事，")}<br/>{t("就是一个好开始。")}</h3><p>{t("填入介绍，免费生成你的完整页面。")}<br/>{t("换个配色，或者再加一张图片。")}</p></div></div>}<div className="preview-foot"><span>{preview?t(themeNames[preview.theme] || preview.theme)+' · '+t(layoutNames[preview.layout] || preview.layout):t('先预览，满意再发布')}</span><span>DESKTOP + MOBILE</span></div><div className="preview-tips"><span><Check size={14}/>{t("完整页面预览")}</span><span><Check size={14}/>{t("资料自动保存")}</span><span><Check size={14}/>{t("电脑手机适配")}</span></div></aside>
    </div>
    {error&&<p className="feedback error" role="alert">{t(error)}</p>}{notice&&<p className="feedback" role="status">{t(notice)}</p>}
   </section>
 
-  {PreviewDialog&&<PreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} name={preview?.name||''} html={previewHtml} device={device} onDeviceChange={setDevice} onDownload={downloadPreview} onCustomize={openBlocks}/>}
+  {PreviewDialog&&<PreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} name={preview?.name||''} html={previewDocument} device={device} onDeviceChange={setDevice} onDownload={downloadPreview} onCustomize={openBlocks}/>}
  </main>;
 }
 

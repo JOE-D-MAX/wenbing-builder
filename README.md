@@ -1,14 +1,29 @@
 # Wenbing Builder
 
-A website builder you host yourself. Drag blocks onto a canvas, edit them in place, export a static site. If you'd rather not start from a blank page, point it at an OpenAI-compatible API and let a model draft the first version, then keep editing block by block.
+A self-hosted website builder with one-click website creation, visual block editing, and optional OpenAI-compatible generation. Start with a complete set of pages, then customize their content, backgrounds, colors, and effects.
 
-No build service and no account system. Drafts live in the browser, and the export is plain HTML you can host anywhere.
+No account is required. Drafts live in the browser. The API and guided-template workflows also provide HTML downloads that you can host yourself.
 
-![The block editor](docs/images/workspace.jpg)
+## New: One-click website creation
+
+**Create a 1–10-page website in one click, then edit every page in the same continuous canvas.**
+
+In the block editor, choose **Entire site**, enter a **Page count** from 1 to 10, and click **Generate site**. Empty and newly added pages receive editable sections and navigation; existing content is preserved on pages that remain. Reducing the count removes the trailing pages, and one undo restores the previous project.
+
+- **Ready-to-edit pages** — generate layouts, backgrounds, and effects without an API key. All pages appear vertically in the existing canvas.
+- **Flexible colors** — by default, generated blocks share base colors and use varied effect accents. Turn on **Unified colors** to reveal presets and color pickers that update the site immediately.
+- **Continuous editing** — drag materials onto individual blocks, adjust content, and use undo/redo. Unified colors also apply to newly added blocks.
+- **Local persistence** — save the color mode and project in your browser, with protection against conflicting saves from other tabs.
+
+See the [update notes](CHANGELOG.md) for this release's features and bug fixes.
+
+![Earlier view of the block editor](docs/images/workspace.jpg)
+
+*Earlier editor view; the new generation and color controls are described above.*
 
 ## Blocks
 
-Navigation, hero, text, gallery, pricing, FAQ, CTA. Drop one on the canvas and click to edit it. Drag to reorder, undo when you change your mind.
+Background surfaces, navigation, hero, text, image cards, accordion lists, action sections, and large signature text. Drop one on the canvas and click to edit it. Drag to reorder within a page, undo when you change your mind.
 
 ## Effects that stay on their block
 
@@ -17,6 +32,8 @@ Cursor glow, scroll reveal, image zoom, star drift, video backgrounds. Each one 
 ## Your model, your key
 
 Any HTTPS endpoint that speaks `chat/completions`. The key lives in page memory, travels through the server to your endpoint, and is never written to the database. Costs and limits are whatever your provider charges.
+
+Generated HTML can be downloaded or sent to the block editor as an isolated static HTML block. Add native blocks around it to extend the page.
 
 ## Chinese and English
 

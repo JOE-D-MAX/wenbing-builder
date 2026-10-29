@@ -24,7 +24,7 @@ Object.assign(authored, {
   image: 'data:image/png;base64,iVBORw0KGgo=',
   items: [{ title: '原有项目标签', text: '原有说明' }],
   link: { type: 'url', target: 'https://example.test/my-project?view=full' },
-  appearance: { background: 'grid', backgroundColor: '#123456', secondaryColor: '#345678', textColor: '#fedcba', accentColor: '#abdd63' },
+  appearance: { background: 'gradient', backgroundColor: '#123456', secondaryColor: '#345678', textColor: '#fedcba', accentColor: '#abdd63' },
   effects: ['reveal'],
 });
 original.pages[0].blocks.push(authored);

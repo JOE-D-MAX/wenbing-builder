@@ -79,7 +79,7 @@ export default function Home(){
   </section>
 
   <section id="how" className="how-section">
-   <div className="how section-wrap reveal"><div className="how-copy"><p className="eyebrow">LESS FRICTION. MORE CREATION.</p><h2>{t('你负责介绍。')}<br/>{t('让想法，轻松落地。')}</h2><p>{t('不用从空白页面开始。')}<br/>{t('从写下第一句话，到看见完整的网站。')}</p><a href="/studio" className="btn light">{t('开始我的故事')} <ArrowUpRight size={18}/></a><div className="how-orbit" aria-hidden="true"><BrandMark/><span/><span/></div></div><ol>{[['写下你的故事','选择用途，填写介绍，加入自己的图片。'],['完整预览，随心调整','选择配色与版式，免费查看自己的完整页面。'],['满意之后，发布上线','付款确认后领取公开网址与完整源码。']].map(([title,body],i)=><li key={title}><span>0{i+1}</span><div><h3>{t(title)}</h3><p>{t(body)}</p></div><ArrowUpRight size={20}/></li>)}</ol></div>
+   <div className="how section-wrap reveal"><div className="how-copy"><p className="eyebrow">LESS FRICTION. MORE CREATION.</p><h2>{t('你负责介绍。')}<br/>{t('让想法，轻松落地。')}</h2><p>{t('不用从空白页面开始。')}<br/>{t('从写下第一句话，到看见完整的网站。')}</p><a href="/studio" className="btn light">{t('开始我的故事')} <ArrowUpRight size={18}/></a><div className="how-orbit" aria-hidden="true"><BrandMark/><span/><span/></div></div><ol>{[['写下你的故事','选择用途，填写介绍，加入自己的图片。'],['完整预览，随心调整','选择配色与版式，免费查看自己的完整页面。'],['满意之后，下载网站','下载 HTML 文件，自行部署到静态托管平台。']].map(([title,body],i)=><li key={title}><span>0{i+1}</span><div><h3>{t(title)}</h3><p>{t(body)}</p></div><ArrowUpRight size={20}/></li>)}</ol></div>
   </section>
 
   <footer className="site-footer section-wrap"><a className="brand" href="#" aria-label={t('返回文炳建站首页')}><BrandMark/>{t('文炳建站')}</a><p>{t('把你的故事，带到更远的地方。')}</p><span>© {new Date().getFullYear()} Wenbing Studio</span><a href="/studio">{t('开始创作')} <ArrowUpRight size={15}/></a></footer>

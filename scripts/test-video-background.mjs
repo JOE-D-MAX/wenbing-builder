@@ -58,7 +58,7 @@ assert(html.includes('media-src data: https:;') && html.includes("connect-src 'n
 assert(html.includes('data-video-toggle') && html.includes('min-height:44px'));
 for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Script(script[1]);
 const unrelated = structuredClone(videoProject);
-unrelated.pages[0].blocks[0].appearance.background = 'grid';
+unrelated.pages[0].blocks[0].appearance.background = 'gradient';
 assert.equal(renderVideoBackground(unrelated.pages[0].blocks[0]), '', 'switching backgrounds retains the saved video without rendering it');
 assert(!renderBlockProject(unrelated).includes('data-background-video'));
 const broken = structuredClone(videoProject);
@@ -186,6 +186,24 @@ race.videos[0].defer = true;
 await race.enter(0, true); await race.enter(0, false);
 race.videos[0].resolve(); await flush();
 assert(race.videos[0].paused, 'a delayed play resolution cannot restart an offscreen video');
+
+for (const interrupt of ['viewport', 'button']) {
+  const resumed = runtime();
+  resumed.videos[0].defer = true;
+  await resumed.enter(0, true);
+  const rejectInterruptedPlay = resumed.videos[0].rejectPending;
+  if (interrupt === 'viewport') { await resumed.enter(0, false); await resumed.enter(0, true); }
+  else { await resumed.click(0); await resumed.click(0); }
+  assert.equal(resumed.videos[0].playCount, 2, `${interrupt} resume can start a fresh request before the paused play promise rejects`);
+  rejectInterruptedPlay(new Error('AbortError: play was interrupted by pause'));
+  await flush();
+  resumed.videos[0].resolve();
+  await flush();
+  assert(!resumed.videos[0].paused, 'an older aborted play cannot mark the resumed video as blocked');
+  resumed.videos[0].defer = false;
+  await resumed.enter(0, false); await resumed.enter(0, true);
+  assert(!resumed.videos[0].paused, 'the recovered video keeps working on later viewport changes');
+}
 
 const fallback = runtime({ observer: false });
 await flush();

@@ -17,6 +17,10 @@ assert.equal(preview.status, 200);
 const generated = await preview.json();
 assert(generated.html.includes('文炳测试小店'));
 assert(generated.html.includes('手作面条'));
+assert(!generated.html.includes('href="about:srcdoc#'), 'The downloadable document must not contain iframe-only links.');
+const fragmentLinks = [...generated.html.matchAll(/href="#([^"]+)"/g)];
+assert(fragmentLinks.length >= 5, 'The generated website must retain its page navigation.');
+for (const [, id] of fragmentLinks) assert(generated.html.includes(`id="${id}"`), `Navigation target must exist: ${id}`);
 assert.equal(generated.preview.name, brief.name);
 assert.equal((await post('/api/preview', brief, 'https://untrusted.invalid')).status, 400);
 for (const path of ['/data/orders.sqlite', '/.data/forma/orders.sqlite', '/lib/runtime.ts', '/.env', '/objects/drafts/F'+'a'.repeat(30)+'.json']) {

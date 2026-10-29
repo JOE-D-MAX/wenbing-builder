@@ -1,4 +1,6 @@
 export const manualEnglish: Record<string, string> = {
+  '重试保存': 'Retry saving',
+  '另一页面已更新这份资料，本页已暂停自动保存。请下载资料副本，再重新加载最新资料。': 'Another tab updated this brief. Autosave is paused here. Download your copy, then reload the latest draft.',
   '文炳建站首页': 'Wenbing home',
   '切换 API 创作': 'Switch to API studio',
   '想自由搭配背景、配色和动效？': 'Want to combine backgrounds, colors, and effects?',

@@ -4,15 +4,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, defaultKeyboardCoordinateGetter, closestCenter, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type KeyboardCoordinateGetter, type CollisionDetection, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, Copy, Eye, FilePlus2, GripVertical, ImagePlus, Layers3, LayoutTemplate, Monitor, MousePointer2, Plus, Pause, Play, Redo2, Smartphone, Sparkles, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, Copy, Eye, FilePlus2, GripVertical, ImagePlus, Layers3, LayoutTemplate, Monitor, MousePointer2, Plus, Pause, Play, Redo2, Smartphone, Sparkles, Shuffle, Trash2, Undo2, X } from 'lucide-react';
 import { BLOCK_IMPORT_KEY, BLOCK_LIBRARY, BLOCK_STORAGE_KEY, EFFECT_LIBRARY, MAX_BLOCKS, MAX_PAGES, MAX_EMBED_HTML_CHARS, blockId, createBlock, createStarterProject, parseBlockProject, safeBlockUrl, type BlockKind, type BlockLink, type BlockProject, type EffectId, type SiteBlock } from '@/lib/block-model';
 import { renderBlockProject } from '@/lib/block-renderer';
+import { randomizePageStyle } from '@/lib/random-block-style';
+import { randomizeSite } from '@/lib/random-site';
+import { applyProjectColorSettings, getProjectColorSettings, inheritUnifiedColors } from '@/lib/project-colors';
+import { createDraftPersistence, type DraftPersistence } from '@/lib/draft-persistence';
 import { createDesignStarterProject } from '@/lib/design-templates';
 import { EffectPreview, usePreviewMotion } from './effect-preview';
 import { BlockMiniature } from './block-miniature';
 import { CanvasImagePicker } from './canvas-image-picker';
 import { BackgroundVideo as BackgroundVideoLayer } from './background-video';
 import { BackgroundVideoPicker } from './background-video-picker';
+import { ProjectColorControls } from './project-color-controls';
 import { readBackgroundVideo } from '@/lib/client-background-video';
 import { safeBackgroundVideoSrc, type BackgroundVideo } from '@/lib/block-model';
 import { PortfolioBlockFields } from './portfolio-block-fields';
@@ -20,7 +25,7 @@ import { DesignBlockFields } from './design-block-fields';
 import { decodeUploadImage } from '@/lib/client-compat';
 import { StudioLanguageSwitch, useStudioI18n } from './studio-i18n';
 
-import { BACKGROUND_LIBRARY, PALETTE_LIBRARY, appearanceStyle, getBlockAppearance, type BackgroundId, type BlockAppearance } from '@/lib/block-model';
+import { BACKGROUND_LIBRARY, PALETTE_LIBRARY, appearanceStyle, getBlockAppearance, type BackgroundId, type BlockAppearance, type BlockColors } from '@/lib/block-model';
 
 type StudioMessage = string | { key: string; values?: Record<string, string | number> };
 type History = { past: BlockProject[]; current: BlockProject; future: BlockProject[] };
@@ -106,10 +111,13 @@ function VideoMaterialItem({ playing, onAdd }: { playing: boolean; onAdd: () => 
   </div>;
 }
 
-function CanvasDrop({ children, pageId, empty, onAdd }: { children: ReactNode; pageId: string; empty: boolean; onAdd: () => void }) {
+function CanvasDrop({ children, pageId, empty }: { children: ReactNode; pageId: string; empty: boolean }) {
   const { t } = useStudioI18n();
   const { setNodeRef, isOver } = useDroppable({ id: `canvas:${pageId}`, data: { type: 'canvas', pageId } });
-  return <div ref={setNodeRef} className={`bs-canvas-stack ${isOver ? 'is-over' : ''} ${empty ? 'is-empty' : ''}`}>{children}<div className="bs-drop-hint"><Layers3 size={28} /><strong>{empty ? t("你的空白画布") : t("添加下一块内容")}</strong><span>{empty ? t("拖入背景、配色或动效开始，再自由添加内容。") : t("背景和配色拖到区块上，不会替换已有内容。")}</span><button type="button" className="bs-button" onClick={onAdd}><Plus size={15} />{t("添加空白区块")}</button></div></div>;
+  return <div ref={setNodeRef} className={`bs-canvas-stack ${isOver ? 'is-over' : ''} ${empty ? 'is-empty' : ''}`}>
+    {children}
+    {empty && <div className="bs-drop-hint"><Layers3 size={24} /><strong>{t("你的空白画布")}</strong><span>{t("拖入背景、配色或动效开始，再自由添加内容。")}</span></div>}
+  </div>;
 }
 
 function AccordionItemsEditor({ items, onChange }: { items: SiteBlock['items']; onChange: (items: SiteBlock['items']) => void }) {
@@ -122,12 +130,14 @@ function AccordionItemsEditor({ items, onChange }: { items: SiteBlock['items']; 
 }
 
 export function BlockStudio() {
-  const { t } = useStudioI18n();
+  const { t, locale } = useStudioI18n();
   // Source messages update with the interface language without restarting requests.
   const messageText = (message: StudioMessage) => typeof message === 'string' ? t(message) : t(message.key, Object.fromEntries(Object.entries(message.values || {}).map(([key, value]) => [key, typeof value === 'string' ? t(value) : value])));
   const [history, setHistory] = useState<History | null>(null);
   const [templateMode, setTemplateMode] = useState<'' | 'editorial'>('');
   const storageKey = useRef(BLOCK_STORAGE_KEY);
+  const persistence = useRef<DraftPersistence | null>(null);
+  const [draftConflict, setDraftConflict] = useState(false);
   const previewMotion = usePreviewMotion();
   const [videoTarget, setVideoTarget] = useState<{ pageId: string; blockId: string } | null>(null);
   const [videoBusy, setVideoBusy] = useState(false);
@@ -136,12 +146,14 @@ export function BlockStudio() {
   const viewContext = useRef({ pageId: '', selectedId: '' });
   const [effectDemos, setEffectDemos] = useState<Record<string, { effect: EffectId; revision: number }>>({});
   const [pageId, setPageId] = useState(''); const [selectedId, setSelectedId] = useState('');
+  const [randomScope, setRandomScope] = useState<'site' | 'page' | 'block'>('site');
+  const [randomPageCount, setRandomPageCount] = useState('7');
   const [libraryTab, setLibraryTab] = useState<'backgrounds' | 'palettes' | 'effects' | 'blocks'>('effects');
   const [mobilePanel, setMobilePanel] = useState<'library' | 'canvas' | 'properties'>('canvas');
   const [view, setView] = useState<'edit' | 'preview'>('edit'); const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [notice, setNotice] = useState<StudioMessage>(''); const [error, setError] = useState<StudioMessage>(''); const [saved, setSaved] = useState('正在恢复草稿');
   const [dragItem, setDragItem] = useState<DragItem | null>(null); const [imageBusy, setImageBusy] = useState(false);
-  const initialized = useRef(false); const historyRef = useRef<History | null>(null); const mergeRef = useRef({ key: '', time: 0 }); const imageRequest = useRef(0); const alive = useRef(true); const persistAllowed = useRef(false);
+  const initialized = useRef(false); const historyRef = useRef<History | null>(null); const mergeRef = useRef({ key: '', time: 0 }); const imageRequest = useRef(0); const alive = useRef(true);
   const project = history?.current; const currentPage = project?.pages.find(page => page.id === pageId) || project?.pages[0];
   const selected = currentPage?.blocks.find(block => block.id === selectedId);
   useEffect(() => { viewContext.current = { pageId: currentPage?.id || '', selectedId }; }, [currentPage?.id, selectedId]);
@@ -156,13 +168,15 @@ export function BlockStudio() {
     setTemplateMode(useTemplate);
     let restored = createStarterProject(); let restoreFailed = false;
     let newTemplate = false;
-    try { const raw = localStorage.getItem(storageKey.current); if (raw) { if (new Blob([raw]).size > JSON_LIMIT) throw new Error('本机草稿超过 3 MB，暂时无法恢复。'); restored = parseBlockProject(JSON.parse(raw)); } else if (useTemplate) {
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(storageKey.current); if (raw) { if (new Blob([raw]).size > JSON_LIMIT) throw new Error('本机草稿超过 3 MB，暂时无法恢复。'); restored = parseBlockProject(JSON.parse(raw)); } else if (useTemplate) {
       restored = createDesignStarterProject();
       if (!alive.current) return;
-      newTemplate = true; persistAllowed.current = true;
+      newTemplate = true;
     } } catch (err) { if (useTemplate) { setError({ key: '模板打开失败：{{reason}}。原来的制作草稿仍保留。', values: { reason: err instanceof Error ? err.message : '资料格式不正确' } }); return; } restoreFailed = true; setError({ key: '未能恢复本机草稿：{{reason}} 原草稿仍保留，网页导入已暂停。主动编辑后才会替换原草稿。', values: { reason: err instanceof Error ? err.message : '资料格式不正确' } }); }
     if (!alive.current) return;
     if (useTemplate) setNotice(newTemplate ? '已创建可编辑模板副本。可以逐块修改文字、图片、配色与跳转；原来的草稿保留在「返回我的草稿」。' : '已恢复上次编辑的模板副本，原来的制作草稿保持不变。');
+    persistence.current = createDraftPersistence({ getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }, storageKey.current, raw);
     const base = restored; let imported = false;
     if (!restoreFailed && new URLSearchParams(window.location.search).get('import') === '1') {
       try {
@@ -175,12 +189,13 @@ export function BlockStudio() {
           const block = { ...createBlock('embed'), html: payload.html, title: typeof payload.title === 'string' ? payload.title.slice(0, 160) : '已生成的网站' };
           const combined = { ...base, pages: base.pages.map((p, i) => i === 0 ? { ...p, blocks: [...p.blocks, block] } : p) };
           if (new Blob([JSON.stringify(combined)]).size > JSON_LIMIT) throw new Error('导入后项目会超过 3 MB。请先减少图片或模块，再重新导入；待导入网页仍然保留。');
-          restored = combined; imported = true; persistAllowed.current = true; setSelectedId(block.id); setNotice('网页已作为静态模块追加到首页，原草稿已保留，可撤销此次导入。'); sessionStorage.removeItem(BLOCK_IMPORT_KEY);
+          restored = combined; imported = true; setSelectedId(block.id); setNotice('网页已作为静态模块追加到首页，原草稿已保留，可撤销此次导入。'); sessionStorage.removeItem(BLOCK_IMPORT_KEY);
         } else { setNotice('没有待导入的网页。你可以从 API 或模板制作页重新发送。'); }
         const url = new URL(window.location.href); url.searchParams.delete('import'); window.history.replaceState({}, '', url.pathname + url.search + url.hash);
       } catch (err) { setError(err instanceof Error ? err.message : '网页导入失败，请重试。'); }
     }
     const next = { past: imported ? [base] : [], current: restored, future: [] }; setHistory(next); historyRef.current = next; setPageId(restored.pages[0].id); if (!imported) setSelectedId((useTemplate ? restored.pages[0].blocks.find(block => block.kind === 'hero')?.id : '') || restored.pages[0].blocks[0]?.id || '');
+    if (imported || newTemplate) persistence.current.stage(JSON.stringify(restored));
     setSaved(imported || newTemplate ? '等待保存' : '本机草稿已就绪');
     };
     void initialize();
@@ -188,22 +203,55 @@ export function BlockStudio() {
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; imageRequest.current += 1; videoRequest.current += 1; }; }, []);
   useEffect(() => {
-    const flush = () => { if (!persistAllowed.current || !historyRef.current) return; try { localStorage.setItem(storageKey.current, JSON.stringify(historyRef.current.current)); } catch { /* Keep the in-memory project intact if storage is full. */ } };
-    window.addEventListener('pagehide', flush); return () => { window.removeEventListener('pagehide', flush); flush(); };
+    const flush = () => { try { persistence.current?.save(); } catch { /* Keep pending changes for retry or recovery. */ } };
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      flush();
+      if (persistence.current?.hasPending()) { event.preventDefault(); event.returnValue = ''; }
+    };
+    const changed = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage || (event.key !== null && event.key !== storageKey.current)) return;
+      try { if (persistence.current?.observeExternalChange()) { setDraftConflict(true); setSaved('尚未保存'); } }
+      catch { setSaved('尚未保存'); }
+    };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', beforeUnload);
+    window.addEventListener('storage', changed);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('storage', changed);
+      flush();
+    };
   }, []);
 
-  useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => {
-    if (!project || (!history?.past.length && !history?.future.length && saved === '本机草稿已就绪')) return;
+    if (!project || !persistence.current) return;
+    if (!persistence.current.hasPending()) {
+      if (history?.past.length || history?.future.length) setSaved(draftConflict ? '尚未保存' : '已保存到本机');
+      return;
+    }
     setSaved('正在保存…');
     const timer = window.setTimeout(() => {
-      try { const raw = JSON.stringify(project); if (new Blob([raw]).size > JSON_LIMIT) throw new Error('项目超过 3 MB，请减少图片或模块。当前修改仍在页面中。'); localStorage.setItem(storageKey.current, raw); setSaved('已保存到本机'); }
-      catch (err) { setSaved('尚未保存'); setError(err instanceof Error ? err.message : '本机存储已满，当前修改仍在页面中。请减少图片或视频后重试保存。'); }
+      try {
+        const result = persistence.current?.save();
+        if (result === 'conflict') { setDraftConflict(true); setSaved('尚未保存'); }
+        else setSaved('已保存到本机');
+      } catch { setSaved('尚未保存'); setError('本机存储已满，当前修改仍在页面中。请减少图片或视频后重试保存。'); }
     }, 600);
     return () => clearTimeout(timer);
-    // Save only when the project changes, never on a status update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
+
+  function downloadCurrentDraft() {
+    if (!historyRef.current) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(historyRef.current.current, null, 2)], { type: 'application/json;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'wenbing-block-recovery.json';
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+  function reloadLatestDraft() {
+    if (persistence.current?.hasPending() && !window.confirm(t('重新加载将丢弃本页未保存的修改。建议先下载当前副本，是否继续？'))) return;
+    persistence.current?.discardPending();
+    window.location.reload();
+  }
 
   const commit = useCallback((update: (value: BlockProject) => BlockProject, mergeKey = '') => {
     const previous = historyRef.current; if (!previous) return false;
@@ -211,16 +259,108 @@ export function BlockStudio() {
     if (new Blob([JSON.stringify(next)]).size > JSON_LIMIT) { setError('这次修改会让项目超过 3 MB，已保留修改前的项目。请减少图片或模块，再重试。'); return false; }
     const now = Date.now(); const merge = Boolean(mergeKey && mergeRef.current.key === mergeKey && now - mergeRef.current.time < 850);
     const state = { past: merge ? previous.past : [...previous.past.slice(-19), previous.current], current: next, future: [] };
-    mergeRef.current = { key: mergeKey, time: now }; historyRef.current = state; persistAllowed.current = true; setHistory(state); setError(''); return true;
+    mergeRef.current = { key: mergeKey, time: now }; historyRef.current = state; persistence.current?.stage(JSON.stringify(state.current)); setHistory(state); setError(''); return true;
   }, []);
+
+  const revealWorkspaceRegion = (id: string) => {
+    requestAnimationFrame(() => {
+      const node = document.getElementById(id);
+      node?.focus({ preventScroll: true });
+      node?.scrollIntoView({ behavior: previewMotion.reduced ? 'instant' : 'smooth', block: 'start' });
+    });
+  };
+
+  const toggleUnifiedColors = () => {
+    if (imageBusy || videoBusy) return;
+    const current = historyRef.current?.current;
+    if (!current) return;
+    const settings = getProjectColorSettings(current);
+    const unified = !settings.unified;
+    if (!commit(value => applyProjectColorSettings(value, { ...getProjectColorSettings(value), unified }))) return;
+    setNotice(unified ? '已开启统一配色。调色会立即应用到整站。' : '已切换为随机特效配色，底色保持统一。');
+  };
+
+  const changeUnifiedColor = (key: keyof BlockColors, value: string) => {
+    if (imageBusy || videoBusy || !/^#[a-fA-F0-9]{6}$/.test(value)) return;
+    const current = historyRef.current?.current;
+    if (!current || !getProjectColorSettings(current).unified) return;
+    if (!commit(project => {
+      const settings = getProjectColorSettings(project);
+      return applyProjectColorSettings(project, { ...settings, colors: { ...settings.colors, [key]: value } });
+    }, `project-colors:${key}`)) return;
+    setNotice('整站配色已更新，可撤销。');
+  };
+
+  const applyUnifiedPalette = (id: string) => {
+    if (imageBusy || videoBusy) return;
+    const current = historyRef.current?.current;
+    const palette = PALETTE_LIBRARY.find(item => item.id === id);
+    if (!current || !palette || !getProjectColorSettings(current).unified) return;
+    const { backgroundColor, secondaryColor, textColor, accentColor } = palette.appearance;
+    if (!commit(value => applyProjectColorSettings(value, { unified: true, colors: { backgroundColor, secondaryColor, textColor, accentColor } }))) return;
+    setNotice('整站配色已更新，可撤销。');
+  };
+
+  const applyRandomStyle = () => {
+    if (!currentPage || imageBusy || videoBusy) return;
+    const currentProject = historyRef.current?.current;
+    if (!currentProject) return;
+    const page = currentProject.pages.find(item => item.id === currentPage.id);
+    if (!page) return;
+    if (randomScope === 'site') {
+      const pageCount = Number(randomPageCount);
+      if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > MAX_PAGES) { setError('网页数量请输入 1–10 的整数。'); return; }
+      const result = randomizeSite(currentProject, { pageCount, locale });
+      if (!result.changed && !result.added && !result.removed) { setError('导入网页保留原有样式，请先添加一个可编辑区块。'); return; }
+      if (!commit(() => result.project)) return;
+      const updatedPage = result.project.pages.find(item => item.id === page.id) || result.project.pages[0];
+      setPageId(updatedPage.id);
+      setEffectDemos({}); setZoomTarget(null); setVideoTarget(null);
+      if (!updatedPage.blocks.some(block => block.id === selectedId && block.kind !== 'embed')) setSelectedId(updatedPage.blocks.find(block => block.kind !== 'embed')?.id || '');
+      setView('edit'); setMobilePanel('canvas');
+      setNotice({ key: '已在当前画布纵向生成 {{count}} 个网页，新增 {{added}} 页，移除 {{removed}} 页。向下滚动即可直接编辑；可一次撤销恢复。', values: { count: result.pageCount, added: result.added, removed: result.removed } });
+      revealWorkspaceRegion('bs-page-editor');
+      return;
+    }
+    if (randomScope === 'block' && (!selected || selected.kind === 'embed')) {
+      setError('请先选中一个可编辑区块，再随机配置。'); return;
+    }
+    const edgePage = page.id === currentProject.pages[0]?.id || page.id === currentProject.pages.at(-1)?.id;
+    const result = randomizePageStyle(page, {
+      ...(randomScope === 'block' ? { blockId: selected!.id } : {}),
+      colorSettings: currentProject.colorSettings,
+      spotlightEligible: () => edgePage,
+    });
+    if (!result.changed) { setError('导入网页保留原有样式，请先添加一个可编辑区块。'); return; }
+    if (!commit(value => ({ ...value, pages: value.pages.map(item => item.id === page.id ? result.page : item) }))) return;
+    setEffectDemos({}); setZoomTarget(null); setVideoTarget(null);
+    if (!result.page.blocks.some(block => block.id === selectedId && block.kind !== 'embed')) setSelectedId(result.page.blocks.find(block => block.kind !== 'embed')?.id || '');
+    setView('edit'); setMobilePanel('canvas');
+    setNotice({ key: '已随机配置 {{count}} 个区块，使用「{{palette}}」配色。可点击撤销恢复。', values: { count: result.changed, palette: result.paletteName } });
+  };
+
+  const selectCanvasBlock = (pageTarget: string, blockTarget: string) => {
+    const page = historyRef.current?.current.pages.find(item => item.id === pageTarget);
+    if (!page || (blockTarget && !page.blocks.some(block => block.id === blockTarget))) return;
+    if (viewContext.current.pageId !== pageTarget) mergeRef.current.key = '';
+    viewContext.current = { pageId: pageTarget, selectedId: blockTarget };
+    setPageId(pageTarget); setSelectedId(blockTarget);
+  };
+
+  const selectCanvasPage = (id: string) => {
+    if (!historyRef.current?.current.pages.some(page => page.id === id)) return;
+    selectCanvasBlock(id, ''); setZoomTarget(null); setVideoTarget(null);
+    setMobilePanel('canvas');
+    revealWorkspaceRegion(view === 'preview' ? 'bs-page-editor' : `canvas-page-${id}`);
+  };
 
   const undo = useCallback(() => {
     const h = historyRef.current; if (!h?.past.length) return; imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null);
-    const next = { past: h.past.slice(0, -1), current: h.past[h.past.length - 1], future: [h.current, ...h.future] }; historyRef.current = next; setHistory(next); mergeRef.current.key = ''; setNotice('已撤销，可再次恢复。');
+    const next = { past: h.past.slice(0, -1), current: h.past[h.past.length - 1], future: [h.current, ...h.future] }; historyRef.current = next; persistence.current?.stage(JSON.stringify(next.current)); setHistory(next); mergeRef.current.key = ''; setNotice('已撤销，可再次恢复。');
   }, []);
   const redo = useCallback(() => {
     const h = historyRef.current; if (!h?.future.length) return; imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null);
-    const next = { past: [...h.past, h.current], current: h.future[0], future: h.future.slice(1) }; historyRef.current = next; setHistory(next); mergeRef.current.key = ''; setNotice('已恢复修改。');
+    const next = { past: [...h.past, h.current], current: h.future[0], future: h.future.slice(1) }; historyRef.current = next; persistence.current?.stage(JSON.stringify(next.current)); setHistory(next); mergeRef.current.key = ''; setNotice('已恢复修改。');
   }, []);
 
   useEffect(() => {
@@ -233,44 +373,49 @@ export function BlockStudio() {
     if ('image' in patch) { imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null); }
     commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.map(b => b.id === selected.id ? { ...b, ...patch } : b) } : page) }), mergeKey ? `${selected.id}-${mergeKey}` : '');
   };
-  const addBlock = (kind: BlockKind, beforeId?: string) => {
-    if (!currentPage) return;
-    if (currentPage.blocks.length >= MAX_BLOCKS) { setError({ key: '每页最多 {{count}} 个模块。可以新建一个页面继续制作。', values: { count: MAX_BLOCKS } }); return; }
+  const addBlock = (kind: BlockKind, beforeId?: string, pageTarget = currentPage?.id || '') => {
+    const draft = historyRef.current?.current;
+    const page = draft?.pages.find(item => item.id === pageTarget);
+    if (!page) return;
+    if (page.blocks.length >= MAX_BLOCKS) { setError({ key: '每页最多 {{count}} 个模块。可以新建一个页面继续制作。', values: { count: MAX_BLOCKS } }); return; }
     const block = createBlock(kind);
-    if (project?.layout === 'portfolio') { block.appearance = { ...getBlockAppearance(selected || currentPage.blocks[0] || block, project.accent) }; if (kind === 'project') block.span = 'half'; }
-    if (!commit(p => ({ ...p, pages: p.pages.map(page => { if (page.id !== currentPage.id) return page; const blocks = [...page.blocks]; const position = beforeId ? blocks.findIndex(b => b.id === beforeId) : -1; blocks.splice(position < 0 ? blocks.length : position, 0, block); return { ...page, blocks }; }) }))) return;
-    setSelectedId(block.id); setView('edit'); setMobilePanel('canvas'); setNotice({ key: '已添加{{name}}。点击模块可编辑内容。', values: { name: labelFor(kind) } });
+    if (draft?.layout === 'portfolio') { block.appearance = { ...getBlockAppearance(page.blocks.find(item => item.id === selectedId) || page.blocks[0] || block, draft.accent) }; if (kind === 'project') block.span = 'half'; }
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => { if (item.id !== page.id) return item; const blocks = [...item.blocks]; const position = beforeId ? blocks.findIndex(b => b.id === beforeId) : -1; blocks.splice(position < 0 ? blocks.length : position, 0, inheritUnifiedColors(block, p)); return { ...item, blocks }; }) }))) return;
+    selectCanvasBlock(page.id, block.id); setView('edit'); setMobilePanel('canvas'); setNotice({ key: '已添加{{name}}。点击模块可编辑内容。', values: { name: labelFor(kind) } });
   };
-  const replayEffect = (blockId: string, effect: EffectId) => {
+  const replayEffect = (blockId: string, effect: EffectId, pageTarget?: string) => {
+    const page = historyRef.current?.current.pages.find(item => (!pageTarget || item.id === pageTarget) && item.blocks.some(block => block.id === blockId));
+    if (!page) return;
     setEffectDemos(previous => ({ ...previous, [blockId]: { effect, revision: (previous[blockId]?.revision || 0) + 1 } }));
-    setSelectedId(blockId); setView('edit'); setMobilePanel('canvas');
+    selectCanvasBlock(page.id, blockId); setView('edit'); setMobilePanel('canvas');
     requestAnimationFrame(() => { const node = document.getElementById(`canvas-block-${blockId}`); if (!node) return; const rect = node.getBoundingClientRect(); if (rect.top < 16 || rect.bottom > window.innerHeight) node.scrollIntoView({ behavior: previewMotion.reduced ? 'instant' : 'smooth', block: 'nearest' }); });
   };
   const cancelZoom = () => { imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null); setNotice('已取消选图，项目保持原样。'); };
-  const applyEffect = (effect: EffectId, targetId = selectedId) => {
-    if (!currentPage) return;
-    const target = currentPage.blocks.find(b => b.id === targetId);
+  const applyEffect = (effect: EffectId, targetId = selectedId, pageTarget = currentPage?.id || '') => {
+    const page = historyRef.current?.current.pages.find(item => targetId ? item.blocks.some(block => block.id === targetId) : item.id === pageTarget);
+    if (!page) return;
+    const target = page.blocks.find(b => b.id === targetId);
     if (effect === 'zoom' && (!target || !target.image) && target?.kind !== 'embed') {
-      if (!target && currentPage.blocks.length) { setNotice('先选中一个区块，或直接拖到目标区块。'); return; }
-      imageRequest.current += 1; setImageBusy(false); setZoomTarget({ pageId: currentPage.id, blockId: target?.id || '' });
-      setSelectedId(target?.id || ''); setView('edit'); setMobilePanel('canvas'); setNotice('在目标区块选择图片，选好后自动应用放大效果。');
+      if (!target && page.blocks.length) { setNotice('先选中一个区块，或直接拖到目标区块。'); return; }
+      imageRequest.current += 1; setImageBusy(false); setZoomTarget({ pageId: page.id, blockId: target?.id || '' });
+      selectCanvasBlock(page.id, target?.id || ''); setView('edit'); setMobilePanel('canvas'); setNotice('在目标区块选择图片，选好后自动应用放大效果。');
       requestAnimationFrame(() => document.getElementById(target ? `canvas-block-${target.id}` : 'canvas-new-image')?.scrollIntoView({ behavior: previewMotion.reduced ? 'instant' : 'smooth', block: 'nearest' }));
       return;
     }
-    if (!target && currentPage.blocks.length === 0) {
+    if (!target && page.blocks.length === 0) {
       const block = createBlock(effect === 'zoom' ? 'project' : 'surface');
       block.effects = [effect];
       if (effect === 'ambient') block.appearance = { ...PALETTE_LIBRARY.find(p => p.id === 'ink-lime')!.appearance };
       if (effect === 'stars' || effect === 'spotlight') block.appearance = { ...PALETTE_LIBRARY.find(p => p.id === 'ocean')!.appearance };
-      if (!commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: [block] } : page) }))) return;
-      replayEffect(block.id, effect);
+      if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id === page.id ? { ...item, blocks: [inheritUnifiedColors(block, p)] } : item) }))) return;
+      replayEffect(block.id, effect, page.id);
       setNotice(effect === 'zoom' ? '已添加图片放大效果。点击图片区块并上传自己的图片。' : '已新建区块并在画布上演示特效，可继续编辑自己的内容。'); return;
     }
     if (!target) { setNotice('先选中一个区块，或直接把特效预览拖到目标区块。'); return; }
     if (target.kind === 'embed') { setNotice('导入网页仅保留静态布局。请将新特效应用到其他区块。'); return; }
-    if (target.effects.includes(effect)) { replayEffect(targetId, effect); setNotice(effect === 'zoom' && !target.image ? '请先上传自己的图片，放大效果会直接显示在画布。' : '已在目标区块重播特效，项目内容保持不变。'); return; }
-    if (!commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.map(b => b.id === targetId ? { ...b, effects: [...b.effects, effect] } : b) } : page) }))) return;
-    replayEffect(targetId, effect); setNotice(effect === 'zoom' && !target.image ? '图片放大已应用；上传自己的图片后会直接显示效果。' : { key: '已应用{{name}}，画布已即时展示；点击区块下方可重播。', values: { name: EFFECT_LIBRARY.find(e => e.id === effect)?.name || '' } });
+    if (target.effects.includes(effect)) { replayEffect(targetId, effect, page.id); setNotice(effect === 'zoom' && !target.image ? '请先上传自己的图片，放大效果会直接显示在画布。' : '已在目标区块重播特效，项目内容保持不变。'); return; }
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id === page.id ? { ...item, blocks: item.blocks.map(b => b.id === targetId ? { ...b, effects: [...b.effects, effect] } : b) } : item) }))) return;
+    replayEffect(targetId, effect, page.id); setNotice(effect === 'zoom' && !target.image ? '图片放大已应用；上传自己的图片后会直接显示效果。' : { key: '已应用{{name}}，画布已即时展示；点击区块下方可重播。', values: { name: EFFECT_LIBRARY.find(e => e.id === effect)?.name || '' } });
   };
   const removeEffect = (effect: EffectId) => {
     if (!selected || !currentPage) return;
@@ -278,13 +423,14 @@ export function BlockStudio() {
     if (commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.map(b => b.id === selected.id ? { ...b, effects: b.effects.filter(id => id !== effect) } : b) } : page) }))) setNotice('特效已移除，其他内容与样式保留；可撤销。');
   };
   const cancelVideo = () => { videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null); };
-  const openVideoPicker = (blockTarget = selectedId) => {
-    if (!currentPage) return;
-    const target = currentPage.blocks.find(block => block.id === blockTarget);
+  const openVideoPicker = (blockTarget = selectedId, pageTarget = currentPage?.id || '') => {
+    const page = historyRef.current?.current.pages.find(item => blockTarget ? item.blocks.some(block => block.id === blockTarget) : item.id === pageTarget);
+    if (!page) return;
+    const target = page.blocks.find(block => block.id === blockTarget);
     if (target?.kind === 'embed') { setNotice('请将视频背景应用到原生区块。'); return; }
-    if (!target && currentPage.blocks.length) { setNotice('请先选中一个区块，或直接拖到目标区块。'); return; }
-    cancelVideo(); setVideoTarget({ pageId: currentPage.id, blockId: target?.id || '' });
-    setSelectedId(target?.id || ''); setView('edit'); setMobilePanel('canvas');
+    if (!target && page.blocks.length) { setNotice('请先选中一个区块，或直接拖到目标区块。'); return; }
+    cancelVideo(); setVideoTarget({ pageId: page.id, blockId: target?.id || '' });
+    selectCanvasBlock(page.id, target?.id || ''); setView('edit'); setMobilePanel('canvas');
     setNotice('选择本机视频或填写视频直链，视频会铺在该区块的内容后方。');
     requestAnimationFrame(() => document.getElementById(target ? `canvas-video-${target.id}` : 'canvas-new-video')?.scrollIntoView({ behavior: previewMotion.reduced ? 'instant' : 'smooth', block: 'nearest' }));
   };
@@ -294,9 +440,9 @@ export function BlockStudio() {
     if (!page || (blockTarget && (!target || target.kind === 'embed'))) return;
     if (!target && page.blocks.length) { setError('画布已变化，请重新选择视频要应用的区块。'); return; }
     const base = target || createBlock('surface');
-    const next = { ...base, backgroundVideo: video, appearance: { ...getBlockAppearance(base, project?.accent), background: 'video' as const } };
-    if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id !== pageTarget ? item : { ...item, blocks: target ? item.blocks.map(block => block.id === blockTarget ? next : block) : [next] }) }))) return;
-    setVideoTarget(null); setSelectedId(next.id); setView('edit'); setMobilePanel('canvas');
+    const next = { ...base, backgroundVideo: video, appearance: { ...getBlockAppearance(base, historyRef.current?.current.accent), background: 'video' as const } };
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id !== pageTarget ? item : { ...item, blocks: target ? item.blocks.map(block => block.id === blockTarget ? next : block) : [inheritUnifiedColors(next, p)] }) }))) return;
+    setVideoTarget(null); selectCanvasBlock(page.id, next.id); setView('edit'); setMobilePanel('canvas');
     setNotice('视频背景已应用，原有内容保留。视频静音循环，可在区块下方暂停或更换。');
   };
   const uploadBackgroundVideo = async (file: File | undefined, blockTarget: string, pageTarget: string) => {
@@ -318,62 +464,99 @@ export function BlockStudio() {
     cancelVideo(); saveBackgroundVideo({ src, dim: .35 }, blockTarget, pageTarget);
   };
   const toggleBackgroundVideo = (block: SiteBlock) => {
-    if (!currentPage || !block.backgroundVideo) return;
-    const backgroundVideo = { ...block.backgroundVideo, paused: !block.backgroundVideo.paused };
-    commit(p => ({ ...p, pages: p.pages.map(page => page.id !== currentPage.id ? page : { ...page, blocks: page.blocks.map(item => item.id === block.id ? { ...item, backgroundVideo } : item) }) }));
+    const page = historyRef.current?.current.pages.find(item => item.blocks.some(target => target.id === block.id));
+    const target = page?.blocks.find(item => item.id === block.id);
+    if (!page || !target?.backgroundVideo) return;
+    const backgroundVideo = { ...target.backgroundVideo, paused: !target.backgroundVideo.paused };
+    if (commit(p => ({ ...p, pages: p.pages.map(item => item.id !== page.id ? item : { ...item, blocks: item.blocks.map(value => value.id === block.id ? { ...value, backgroundVideo } : value) }) }))) selectCanvasBlock(page.id, block.id);
   };
-  const applyMaterial = (material: { palette: string } | { background: BackgroundId }, targetId = selectedId) => {
-    if (!currentPage) return;
-    let target = currentPage.blocks.find(b => b.id === targetId);
-    if (!target && currentPage.blocks.length) { setNotice('先选中一个区块，再应用背景或配色。'); return; }
+  const applyMaterial = (material: { palette: string } | { background: BackgroundId }, targetId = selectedId, pageTarget = currentPage?.id || '') => {
+    const page = historyRef.current?.current.pages.find(item => targetId ? item.blocks.some(block => block.id === targetId) : item.id === pageTarget);
+    if (!page) return;
+    let target = page.blocks.find(b => b.id === targetId);
+    if (!target && page.blocks.length) { setNotice('先选中一个区块，再应用背景或配色。'); return; }
     if (target?.kind === 'embed') { setNotice('导入网页保留自己的样式。请在前后添加空白区块，再应用素材。'); return; }
-    if ('background' in material && material.background === 'video' && !target?.backgroundVideo?.src) { openVideoPicker(targetId); return; }
+    if ('background' in material && material.background === 'video' && !target?.backgroundVideo?.src) { openVideoPicker(targetId, page.id); return; }
     cancelVideo();
     const isNew = !target; target ??= createBlock('surface');
-    const before = getBlockAppearance(target, project?.accent);
+    const before = getBlockAppearance(target, historyRef.current?.current.accent);
     const palette = 'palette' in material ? PALETTE_LIBRARY.find(p => p.id === material.palette) : undefined;
     const appearance = palette ? { ...palette.appearance, background: before.background } : 'background' in material ? { ...before, background: material.background } : before;
     const next = { ...target, appearance };
-    if (!commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: isNew ? [next] : page.blocks.map(b => b.id === next.id ? next : b) } : page) }))) return;
-    setSelectedId(next.id); setView('edit'); setMobilePanel('canvas');
+    if (!commit(p => {
+      const settings = getProjectColorSettings(p);
+      const inserted = isNew ? inheritUnifiedColors(next, p) : next;
+      const updated = { ...p, pages: p.pages.map(item => item.id === page.id ? { ...item, blocks: isNew ? [inserted] : item.blocks.map(b => b.id === next.id ? next : b) } : item) };
+      return settings.unified && palette ? applyProjectColorSettings(updated, { unified: true, colors: palette.appearance }) : updated;
+    })) return;
+    selectCanvasBlock(page.id, next.id); setView('edit'); setMobilePanel('canvas');
     setNotice({ key: isNew ? '{{name}}已应用，已创建空白区块。' : '{{name}}已应用，文字和跳转保持原样。', values: { name: palette ? '配色' : '背景' } });
   };
   const updateAppearance = (patch: Partial<BlockAppearance>) => {
     if (!selected) return;
     if (patch.background === 'video' && !selected.backgroundVideo?.src) { openVideoPicker(selected.id); return; }
+    const current = historyRef.current?.current;
+    const { background, ...colors } = patch;
+    if (current && getProjectColorSettings(current).unified && Object.keys(colors).length) {
+      if (imageBusy || videoBusy) return;
+      if (!commit(value => {
+        const settings = getProjectColorSettings(value);
+        const updated = applyProjectColorSettings(value, { unified: true, colors: { ...settings.colors, ...colors } });
+        return background === undefined ? updated : { ...updated, pages: updated.pages.map(page => ({ ...page, blocks: page.blocks.map(block => block.id === selected.id ? { ...block, appearance: { ...getBlockAppearance(block, updated.accent), background } } : block) })) };
+      }, `project-colors:${Object.keys(colors).sort().join(',')}`)) return;
+      setNotice('整站配色已更新，可撤销。'); return;
+    }
     updateBlock({ appearance: { ...getBlockAppearance(selected, project?.accent), ...patch } }, 'appearance');
   };
   const applyPageAppearance = () => {
     if (!selected || !currentPage || !project || selected.kind === 'embed') return;
     const appearance = getBlockAppearance(selected, project?.accent);
-    if (commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.map(b => b.kind === 'embed' ? b : { ...b, appearance: { ...appearance, background: appearance.background === 'video' ? getBlockAppearance(b, project.accent).background : appearance.background } }) } : page) }))) setNotice('当前背景和配色已应用到本页区块，原有文字与动效已保留；可撤销。');
+    if (commit(p => {
+      const settings = getProjectColorSettings(p);
+      const updated = settings.unified ? applyProjectColorSettings(p, { unified: true, colors: appearance }) : p;
+      return { ...updated, pages: updated.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.map(b => b.kind === 'embed' ? b : { ...b, appearance: { ...appearance, background: appearance.background === 'video' ? getBlockAppearance(b, updated.accent).background : appearance.background } }) } : page) };
+    })) setNotice('当前背景和配色已应用到本页区块，原有文字与动效已保留；可撤销。');
   };
   const moveBlock = (id: string, delta: number) => {
-    if (!currentPage) return; const index = currentPage.blocks.findIndex(b => b.id === id); const nextIndex = index + delta; if (index < 0 || nextIndex < 0 || nextIndex >= currentPage.blocks.length) return;
-    commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: arrayMove(page.blocks, index, nextIndex) } : page) })); setNotice(delta < 0 ? '模块已上移。' : '模块已下移。');
+    const page = historyRef.current?.current.pages.find(item => item.blocks.some(block => block.id === id));
+    if (!page) return; const index = page.blocks.findIndex(b => b.id === id); const nextIndex = index + delta; if (index < 0 || nextIndex < 0 || nextIndex >= page.blocks.length) return;
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id === page.id ? { ...item, blocks: arrayMove(item.blocks, index, nextIndex) } : item) }))) return;
+    selectCanvasBlock(page.id, id); setNotice(delta < 0 ? '模块已上移。' : '模块已下移。');
   };
   const copyBlock = (id: string) => {
-    if (!currentPage) return; if (currentPage.blocks.length >= MAX_BLOCKS) { setError({ key: '每页最多 {{count}} 个模块。', values: { count: MAX_BLOCKS } }); return; }
-    const original = currentPage.blocks.find(b => b.id === id); if (!original) return; const copy = { ...original, id: blockId(), items: original.items.map(i => ({ ...i })), effects: [...original.effects], link: { ...original.link } };
-    if (!commit(p => ({ ...p, pages: p.pages.map(page => { if (page.id !== currentPage.id) return page; const blocks = [...page.blocks]; blocks.splice(blocks.findIndex(b => b.id === id) + 1, 0, copy); return { ...page, blocks }; }) }))) return; setSelectedId(copy.id); setNotice('已复制模块。');
+    const page = historyRef.current?.current.pages.find(item => item.blocks.some(block => block.id === id));
+    if (!page) return; if (page.blocks.length >= MAX_BLOCKS) { setError({ key: '每页最多 {{count}} 个模块。', values: { count: MAX_BLOCKS } }); return; }
+    const original = page.blocks.find(b => b.id === id); if (!original) return; const copy = { ...original, id: blockId(), items: original.items.map(i => ({ ...i })), effects: [...original.effects], link: { ...original.link } };
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => { if (item.id !== page.id) return item; const blocks = [...item.blocks]; blocks.splice(blocks.findIndex(b => b.id === id) + 1, 0, inheritUnifiedColors(copy, p)); return { ...item, blocks }; }) }))) return; selectCanvasBlock(page.id, copy.id); setNotice('已复制模块。');
   };
-  const deleteBlock = (id: string) => { if (!currentPage) return; if (zoomTarget?.blockId === id) cancelZoom(); if (videoTarget?.blockId === id) cancelVideo(); commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, blocks: page.blocks.filter(b => b.id !== id) } : page) })); if (selectedId === id) setSelectedId(''); setNotice('已删除模块，可点击「撤销」恢复。'); };
+  const deleteBlock = (id: string) => {
+    const page = historyRef.current?.current.pages.find(item => item.blocks.some(block => block.id === id));
+    if (!page) return;
+    if (!commit(p => ({ ...p, pages: p.pages.map(item => item.id === page.id ? { ...item, blocks: item.blocks.filter(b => b.id !== id) } : item) }))) return;
+    if (zoomTarget?.blockId === id) cancelZoom(); if (videoTarget?.blockId === id) cancelVideo();
+    selectCanvasBlock(page.id, viewContext.current.pageId === page.id && viewContext.current.selectedId !== id ? viewContext.current.selectedId : '');
+    setNotice('已删除模块，可点击「撤销」恢复。');
+  };
   const startDrag = (event: DragStartEvent) => setDragItem(event.active.data.current as DragItem);
   const endDrag = (event: DragEndEvent) => {
     setDragItem(null); const active = event.active.data.current as DragItem | undefined; const over = event.over?.data.current;
-    if (!active || !over || !currentPage || over.pageId !== currentPage.id) return;
-    if (active.type === 'library') addBlock(active.kind, over.type === 'block' ? over.blockId : undefined);
-    else if (active.type === 'palette') applyMaterial({ palette: active.palette }, over.type === 'block' ? over.blockId : selectedId);
-    else if (active.type === 'background') applyMaterial({ background: active.background }, over.type === 'block' ? over.blockId : selectedId);
-    else if (active.type === 'effect') { if (over.type === 'block' || !currentPage.blocks.length) applyEffect(active.effect, over.type === 'block' ? over.blockId : ''); else setNotice('请把特效预览拖到一个具体区块上。'); }
-    else if (active.type === 'block' && active.pageId === currentPage.id) { const oldIndex = currentPage.blocks.findIndex(b => b.id === active.blockId); const nextIndex = over.type === 'block' ? currentPage.blocks.findIndex(b => b.id === over.blockId) : currentPage.blocks.length - 1; if (oldIndex >= 0 && nextIndex >= 0 && oldIndex !== nextIndex) moveBlock(active.blockId, nextIndex - oldIndex); }
+    if (!active || !over || !['canvas', 'block'].includes(over.type)) return;
+    const page = historyRef.current?.current.pages.find(item => item.id === over.pageId);
+    if (!page || (over.type === 'block' && !page.blocks.some(block => block.id === over.blockId))) return;
+    if (active.type === 'block' && active.pageId !== page.id) { setNotice('区块只能在所属网页内排序；可在目标网页添加新模块。'); return; }
+    const targetId = over.type === 'block' ? over.blockId : page.blocks.find(block => block.id === selectedId && block.kind !== 'embed')?.id || page.blocks.find(block => block.kind !== 'embed')?.id || '';
+    if (active.type === 'library') addBlock(active.kind, over.type === 'block' ? over.blockId : undefined, page.id);
+    else if (active.type === 'palette') applyMaterial({ palette: active.palette }, targetId, page.id);
+    else if (active.type === 'background') applyMaterial({ background: active.background }, targetId, page.id);
+    else if (active.type === 'effect') { if (over.type === 'block' || !page.blocks.length) applyEffect(active.effect, over.type === 'block' ? over.blockId : '', page.id); else setNotice('请把特效预览拖到一个具体区块上。'); }
+    else if (active.type === 'block' && active.pageId === page.id) { const oldIndex = page.blocks.findIndex(b => b.id === active.blockId); const nextIndex = over.type === 'block' ? page.blocks.findIndex(b => b.id === over.blockId) : page.blocks.length - 1; if (oldIndex >= 0 && nextIndex >= 0 && oldIndex !== nextIndex) moveBlock(active.blockId, nextIndex - oldIndex); }
   };
   const addPage = () => {
     if (!project) return; if (project.pages.length >= MAX_PAGES) { setError({ key: '一个项目最多 {{count}} 个页面。', values: { count: MAX_PAGES } }); return; }
     const page = { id: blockId('page'), title: `页面 ${project.pages.length + 1}`, blocks: [] };
-    if (!commit(p => ({ ...p, pages: [...p.pages, page] }))) return; setPageId(page.id); setSelectedId(''); setView('edit'); setNotice('已新建页面。可以修改名称，再添加模块。');
+    if (!commit(p => ({ ...p, pages: [...p.pages, page] }))) return; selectCanvasBlock(page.id, ''); setView('edit'); setMobilePanel('canvas'); setNotice('已新建页面。可以修改名称，再添加模块。'); revealWorkspaceRegion(`canvas-page-${page.id}`);
   };
-  const deletePage = () => { if (!project || !currentPage || project.pages.length === 1) return; const remaining = project.pages.filter(p => p.id !== currentPage.id); if (!commit(p => ({ ...p, pages: remaining }))) return; imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null); setPageId(remaining[0].id); setSelectedId(''); setNotice('页面已删除。指向它的按钮将停用；撤销可恢复。'); };
+  const deletePage = () => { if (!project || !currentPage || project.pages.length === 1) return; const remaining = project.pages.filter(p => p.id !== currentPage.id); if (!commit(p => ({ ...p, pages: remaining }))) return; imageRequest.current += 1; setImageBusy(false); setZoomTarget(null); videoRequest.current += 1; setVideoBusy(false); setVideoTarget(null); selectCanvasBlock(remaining[0].id, ''); setNotice('页面已删除。指向它的按钮将停用；撤销可恢复。'); revealWorkspaceRegion(view === 'preview' ? 'bs-page-editor' : `canvas-page-${remaining[0].id}`); };
   const uploadImage = async (file?: File, blockTarget = selected?.id || '', pageTarget = currentPage?.id || '', addZoom = false) => {
     if (!file || !pageTarget || (!blockTarget && !addZoom)) return;
     const request = ++imageRequest.current; setImageBusy(true); setError('');
@@ -386,11 +569,11 @@ export function BlockStudio() {
       if (!target && page.blocks.length >= MAX_BLOCKS) { setError({ key: '每页最多 {{count}} 个模块，请先移除一个模块。', values: { count: MAX_BLOCKS } }); return; }
       const created = target ? null : createBlock('surface');
       const finalId = target?.id || created!.id;
-      const saved = commit(project => ({ ...project, pages: project.pages.map(item => item.id !== pageTarget ? item : { ...item, blocks: created ? [...item.blocks, { ...created, image, effects: ['zoom'] }] : item.blocks.map(block => block.id === blockTarget ? { ...block, image, effects: addZoom ? [...new Set<EffectId>([...block.effects, 'zoom'])] : block.effects } : block) }) }));
+      const saved = commit(project => ({ ...project, pages: project.pages.map(item => item.id !== pageTarget ? item : { ...item, blocks: created ? [...item.blocks, inheritUnifiedColors({ ...created, image, effects: ['zoom'] }, project)] : item.blocks.map(block => block.id === blockTarget ? { ...block, image, effects: addZoom ? [...new Set<EffectId>([...block.effects, 'zoom'])] : block.effects } : block) }) }));
       if (!saved) return;
       setZoomTarget(null);
       const updated = historyRef.current?.current.pages.find(item => item.id === pageTarget)?.blocks.find(item => item.id === finalId);
-      if (updated?.effects.includes('zoom') && viewContext.current.pageId === pageTarget && viewContext.current.selectedId === blockTarget) replayEffect(finalId, 'zoom');
+      if (updated?.effects.includes('zoom') && viewContext.current.pageId === pageTarget && viewContext.current.selectedId === blockTarget) replayEffect(finalId, 'zoom', pageTarget);
       setNotice(addZoom ? '图片已添加，放大效果已在画布展示。原有内容与配色保留。' : '图片已压缩并保存在本机项目中。');
     } catch (err) { if (alive.current && imageRequest.current === request) setError(err instanceof Error ? err.message : '图片处理失败，请重试。'); }
     finally { if (alive.current && imageRequest.current === request) setImageBusy(false); }
@@ -404,19 +587,53 @@ export function BlockStudio() {
     {templateMode && <div className="bs-template-banner"><span>{t("正在编辑：")}{t("黑荧绿设计模板副本")}</span><a href="/studio/blocks"><ArrowLeft size={15} />{t("返回我的草稿")}</a></div>}
     <div className="bs-titlebar"><div><span className="bs-eyebrow">STYLE YOUR OWN CANVAS</span><h1>{t("选背景，配颜色，让页面动起来。")}</h1><p>{t("背景、配色和动效独立应用。内容与布局，由你决定。")}</p></div><span className="bs-local"><span />{t("本机创作 · 尚未发布")}</span></div>
     <span className="bs-hidden-label" role="status">{t(saved)}</span>
+    {draftConflict && <div className="bs-notice is-error bs-draft-conflict" role="alert"><span>{t('另一页面已更新此项目，本页已暂停自动保存。当前内容仍保留，请下载副本或重新加载最新草稿。')}</span><div className="bs-conflict-actions"><button type="button" className="bs-button" onClick={downloadCurrentDraft}>{t('下载当前副本')}</button><button type="button" className="bs-button" onClick={reloadLatestDraft}>{t('重新加载最新草稿')}</button></div></div>}
     {(notice || error) && <div className={`bs-notice ${error ? 'is-error' : ''}`} role={error ? 'alert' : 'status'}><span>{messageText(error || notice)}</span><button type="button" className="bs-icon" aria-label={t("关闭提示")} onClick={() => { setError(''); setNotice(''); }}><X size={15} /></button></div>}
     <div className="bs-mobile-tabs" aria-label={t("编辑区域")}>{([{ id: 'library', label: '风格素材', icon: Layers3 }, { id: 'canvas', label: '页面画布', icon: LayoutTemplate }, { id: 'properties', label: '编辑属性', icon: MousePointer2 }] as const).map(tab => <button type="button" key={tab.id} aria-pressed={mobilePanel === tab.id} onClick={() => setMobilePanel(tab.id)}><tab.icon size={17} />{t(tab.label)}</button>)}</div>
     <DndContext sensors={sensors} collisionDetection={collision} onDragStart={startDrag} onDragCancel={() => setDragItem(null)} onDragEnd={endDrag} accessibility={{ screenReaderInstructions: { draggable: t('按空格拾起模块，方向键调整位置，再按空格放下，按 Escape 取消。也可以使用添加、上移和下移按钮。') } }}>
       <div className={`bs-workspace bs-mobile-${mobilePanel}`}>
         <aside className="bs-library bs-panel"><div className="bs-panel-heading"><div><span className="bs-step">01</span><h2>{t("风格素材")}</h2></div></div><div className="bs-segment bs-library-tabs">{([{ id: 'backgrounds', label: '背景' }, { id: 'palettes', label: '配色' }, { id: 'effects', label: '动效' }, { id: 'blocks', label: '结构' }] as const).map(tab => <button type="button" key={tab.id} aria-pressed={libraryTab === tab.id} onClick={() => setLibraryTab(tab.id)}>{t(tab.label)}</button>)}</div><p className="bs-helper">{libraryTab === 'blocks' ? t("通用结构，不包含任何网站的内容。") : libraryTab === 'effects' ? t("先看动态预览，再拖入区块；也可点击右下角应用。") : libraryTab === 'backgrounds' ? t("拖入背景预览即可应用；视频背景可选择本机视频。") : t("只改颜色，保留文字与跳转；拖动画面即可应用。")}</p>{(libraryTab === 'effects' || libraryTab === 'backgrounds') && <div className="bs-motion-control"><span>{previewMotion.reduced ? t("已跟随系统减少动画") : t("可见卡片自动演示")}</span><button type="button" onClick={previewMotion.toggle} disabled={previewMotion.reduced}>{previewMotion.paused || previewMotion.reduced ? <Play size={13} /> : <Pause size={13} />}{previewMotion.reduced ? t("静态预览") : previewMotion.paused ? t("播放演示") : t("暂停演示")}</button></div>}<div key={libraryTab} className="bs-library-scroll">{libraryTab === 'blocks' ? BLOCK_LIBRARY.map(item => <LibraryItem key={item.kind} item={item} onAdd={() => addBlock(item.kind)} />) : libraryTab === 'effects' ? EFFECT_LIBRARY.map(item => <EffectItem key={item.id} item={item} playing={previewMotion.playing} applied={selected?.effects.includes(item.id)} disabled={Boolean((!selected && currentPage.blocks.length) || selected?.kind === 'embed')} onAdd={() => applyEffect(item.id)} onRemove={() => removeEffect(item.id)} />) : libraryTab === 'palettes' ? [...PALETTE_LIBRARY.filter(item => item.id === 'ink-lime'), ...PALETTE_LIBRARY.filter(item => item.id !== 'ink-lime')].map(item => <MaterialItem key={item.id} type="palette" id={item.id} name={t(item.name)} description={t("背景、文字与强调色一起应用")} appearance={item.appearance} onAdd={() => applyMaterial({ palette: item.id })} />) : [...BACKGROUND_LIBRARY.filter(item => item.id === 'video'), ...BACKGROUND_LIBRARY.filter(item => item.id === 'halo'), ...BACKGROUND_LIBRARY.filter(item => !['halo', 'video'].includes(item.id))].map(item => item.id === 'video' ? <VideoMaterialItem key={item.id} playing={previewMotion.playing} onAdd={() => applyMaterial({ background: 'video' })} /> : <MaterialItem key={item.id} type="background" id={item.id} name={t(item.name)} description={t(item.description)} appearance={{ ...getBlockAppearance(selected || createBlock('surface'), project.accent), background: item.id }} onAdd={() => applyMaterial({ background: item.id })} />)}</div></aside>
-        <section className="bs-center"><div className="bs-canvas-heading"><div><span className="bs-step">02</span><h2>{t("组合页面")}</h2></div><div className="bs-canvas-tools"><div className="bs-history-actions" role="group" aria-label={t("编辑历史")}><button type="button" className="bs-icon" aria-label={t("撤销")} title={t("撤销")} disabled={!history.past.length} onClick={undo}><Undo2 size={17} /></button><button type="button" className="bs-icon" aria-label={t("恢复")} title={t("恢复")} disabled={!history.future.length} onClick={redo}><Redo2 size={17} /></button></div><div className="bs-segment"><button type="button" aria-pressed={view === 'edit'} onClick={() => setView('edit')}><LayoutTemplate size={15} />{t("编辑")}</button><button type="button" aria-pressed={view === 'preview'} onClick={() => setView('preview')}><Eye size={15} />{t("预览")}</button></div></div></div>
-          <div className="bs-pages"><label><span className="bs-hidden-label">{t("当前页面")}</span><select aria-label={t("当前页面")} value={currentPage.id} onChange={e => { setPageId(e.target.value); setSelectedId(''); }}>{project.pages.map(page => <option key={page.id} value={page.id}>{page.title}</option>)}</select><ChevronDown size={14} /></label><button type="button" className="bs-icon" aria-label={t("新建页面")} onClick={addPage} disabled={project.pages.length >= MAX_PAGES}><FilePlus2 size={18} /></button><button type="button" className="bs-icon" aria-label={t("删除当前页面")} disabled={project.pages.length <= 1} onClick={deletePage}><Trash2 size={16} /></button><span>{currentPage.blocks.length} / {MAX_BLOCKS} {t("模块")}</span></div>
-          <label className="bs-page-name"><span>{t("页面名称")}</span><input aria-label={t("页面名称")} value={currentPage.title} maxLength={60} onChange={e => commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, title: e.target.value } : page) }), 'page-title')} /></label>
+        <section className="bs-center"><div className="bs-canvas-heading"><div><span className="bs-step">02</span><h2>{t("组合页面")}</h2></div><div className="bs-canvas-tools"><div className="bs-history-actions" role="group" aria-label={t("编辑历史")}><button type="button" className="bs-icon" aria-label={t("撤销")} title={t("撤销")} disabled={!history.past.length} onClick={undo}><Undo2 size={17} /></button><button type="button" className="bs-icon" aria-label={t("恢复")} title={t("恢复")} disabled={!history.future.length} onClick={redo}><Redo2 size={17} /></button></div><div className="bs-segment"><button type="button" aria-pressed={view === 'edit'} onClick={() => { setView('edit'); setMobilePanel('canvas'); revealWorkspaceRegion(`canvas-page-${currentPage.id}`); }}><LayoutTemplate size={15} />{t("编辑")}</button><button type="button" aria-pressed={view === 'preview'} onClick={() => { setView('preview'); setMobilePanel('canvas'); revealWorkspaceRegion('bs-page-editor'); }}><Eye size={15} />{t("预览")}</button></div></div></div>
+          <div className="bs-pages"><label><span className="bs-hidden-label">{t("当前页面")}</span><select aria-label={t("当前页面")} value={currentPage.id} onChange={e => selectCanvasPage(e.target.value)}>{project.pages.map(page => <option key={page.id} value={page.id}>{page.title}</option>)}</select><ChevronDown size={14} /></label><button type="button" className="bs-icon" aria-label={t("新建页面")} onClick={addPage} disabled={project.pages.length >= MAX_PAGES}><FilePlus2 size={18} /></button><button type="button" className="bs-icon" aria-label={t("删除当前页面")} disabled={project.pages.length <= 1} onClick={deletePage}><Trash2 size={16} /></button><span className="bs-page-stats"><strong className="bs-page-total" aria-live="polite" aria-atomic="true">{t("共 {{count}} 页", { count: project.pages.length })}</strong><small>{currentPage.blocks.length} / {MAX_BLOCKS} {t("模块")}</small></span></div>
+          <label className="bs-page-name"><span>{t("页面名称")}</span><input aria-label={t("页面名称")} value={currentPage.title} maxLength={60} onChange={e => commit(p => ({ ...p, pages: p.pages.map(page => page.id === currentPage.id ? { ...page, title: e.target.value } : page) }), `page-title:${currentPage.id}`)} /></label>
           <label className="bs-project-layout"><span>{t("网页版式")}</span><select aria-label={t("网页版式")} value={project.layout || 'free'} onChange={event => commit(p => ({ ...p, layout: event.target.value === 'portfolio' ? 'portfolio' : undefined }))}><option value="free">{t("自由区块")}</option><option value="portfolio">{t("个人作品集 · 双列作品与大字首屏")}</option></select></label>
-          {view === 'edit' ? <><p className="bs-canvas-tip"><MousePointer2 size={14} />{t("特效直接在画布展示；点击效果标签可重播，抓住手柄可排序。")}</p><SortableContext items={currentPage.blocks.map(block => block.id)} strategy={verticalListSortingStrategy}><CanvasDrop pageId={currentPage.id} empty={!currentPage.blocks.length} onAdd={() => addBlock('surface')}>{videoTarget?.pageId === currentPage.id && !videoTarget.blockId && <div id="canvas-new-video"><BackgroundVideoPicker busy={videoBusy} onUpload={file => { void uploadBackgroundVideo(file, '', currentPage.id); }} onUrl={url => useVideoUrl(url, '', currentPage.id)} onCancel={cancelVideo} /></div>}{zoomTarget?.pageId === currentPage.id && !zoomTarget.blockId && <div id="canvas-new-image"><CanvasImagePicker busy={imageBusy} onUpload={file => { void uploadImage(file, '', currentPage.id, true); }} onCancel={cancelZoom} /></div>}{currentPage.blocks.map((block, index) => <SortableBlock key={block.id} block={block} videoTools={block.kind !== 'embed' ? <>
-            {getBlockAppearance(block, project.accent).background === 'video' && block.backgroundVideo && <div className="bs-video-tools"><button type="button" className="bs-text-button" onClick={() => toggleBackgroundVideo(block)}>{block.backgroundVideo.paused ? <Play size={14} /> : <Pause size={14} />}{block.backgroundVideo.paused ? t("恢复背景自动播放") : t("暂停背景视频")}</button><button type="button" className="bs-text-button" onClick={() => openVideoPicker(block.id)}>{t("更换背景视频")}</button></div>}
-            {videoTarget?.pageId === currentPage.id && videoTarget.blockId === block.id && <div id={`canvas-video-${block.id}`}><BackgroundVideoPicker busy={videoBusy} onUpload={file => { void uploadBackgroundVideo(file, block.id, currentPage.id); }} onUrl={url => useVideoUrl(url, block.id, currentPage.id)} onCancel={cancelVideo} /></div>}
-          </> : undefined} imagePicker={block.kind !== 'embed' && ((zoomTarget?.pageId === currentPage.id && zoomTarget.blockId === block.id) || (block.effects.includes('zoom') && !block.image)) ? <CanvasImagePicker busy={imageBusy} onUpload={file => { void uploadImage(file, block.id, currentPage.id, true); }} onCancel={zoomTarget?.blockId === block.id ? cancelZoom : undefined} /> : undefined} playing={previewMotion.playing} demo={effectDemos[block.id]} onReplay={effect => effect === 'zoom' && !block.image ? applyEffect(effect, block.id) : replayEffect(block.id, effect)} pageId={currentPage.id} accent={project.accent} selected={selected?.id === block.id} first={index === 0} last={index === currentPage.blocks.length - 1} onSelect={() => { setSelectedId(block.id); if (window.innerWidth <= 800) setMobilePanel('properties'); }} onMove={delta => moveBlock(block.id, delta)} onCopy={() => copyBlock(block.id)} onDelete={() => deleteBlock(block.id)} />)}</CanvasDrop></SortableContext></> : <div className="bs-preview"><div className="bs-preview-toolbar"><span>{t("互动预览")}</span><div className="bs-segment"><button type="button" aria-label={t("电脑预览")} aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}><Monitor size={17} /></button><button type="button" aria-label={t("手机预览")} aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')}><Smartphone size={17} /></button></div></div>{!previewHtml && <p role="alert">{t('预览暂时无法生成，请检查项目内容。')}</p>}<iframe title={t("模块网站互动预览")} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={previewHtml} className={device === 'mobile' ? 'is-mobile' : ''} /><p className="bs-helper">{t("可以点击按钮、切换页面并体验特效。预览中不会打开外部网站。")}</p></div>}
+          <div className="bs-random-config" role="group" aria-label={t('随机配置')}>
+            <ProjectColorControls settings={getProjectColorSettings(project)} disabled={imageBusy || videoBusy}
+              onToggle={toggleUnifiedColors} onColorChange={changeUnifiedColor} onPreset={applyUnifiedPalette} />
+            <div className="bs-random-controls">
+              <div className="bs-random-field"><label htmlFor="random-style-scope">{t('配置范围')}</label><select id="random-style-scope" value={randomScope} onChange={event => setRandomScope(event.target.value === 'block' ? 'block' : event.target.value === 'page' ? 'page' : 'site')}><option value="site">{t('整个网站')}</option><option value="page">{t('当前页面')}</option><option value="block">{t('选中区块')}</option></select></div>
+              {randomScope === 'site' && <div className="bs-random-field"><label htmlFor="random-site-page-count">{t('网页数量')}</label><input id="random-site-page-count" type="number" min={1} max={MAX_PAGES} step={1} required value={randomPageCount} onChange={event => setRandomPageCount(event.target.value)} aria-invalid={!Number.isInteger(Number(randomPageCount)) || Number(randomPageCount) < 1 || Number(randomPageCount) > MAX_PAGES} aria-describedby="random-style-help" /></div>}
+              <button type="button" className="bs-button bs-random-button" onClick={applyRandomStyle} disabled={imageBusy || videoBusy || (randomScope === 'block' ? !selected || selected.kind === 'embed' : randomScope === 'page' && currentPage.blocks.length > 0 && currentPage.blocks.every(block => block.kind === 'embed'))} aria-describedby="random-style-help"><Shuffle size={16} aria-hidden="true" />{randomScope === 'site' ? t('一键配置整站') : t('随机配置')}</button>
+            </div>
+            <p id="random-style-help">{randomScope === 'site' ? t('填写 1–10 的整数，点击后网站页数与输入一致。数量减少时保留前面的页面，移除后面的页面；可一次撤销恢复。') : <>{t('一键搭配背景、配色与动效，保留文字、图片和跳转；可撤销。')}{randomScope === 'page' && currentPage.blocks.length === 0 ? ' ' + t('空白页面会添加一个风格区块。') : randomScope === 'block' && (!selected || selected.kind === 'embed') ? ' ' + t('请先选中一个可编辑区块。') : currentPage.blocks.length > 0 && currentPage.blocks.every(block => block.kind === 'embed') ? ' ' + t('导入网页保留原有样式，请先添加一个可编辑区块。') : ''}</>}</p>
+          </div>
+          <div id="bs-page-editor" className="bs-page-editor" tabIndex={-1}>
+          {view === 'edit' ? <><p className="bs-canvas-tip"><MousePointer2 size={14} />{t("所有网页在此纵向展开；点击区块直接编辑，拖入素材即可应用。")}</p>
+            <div className="bs-vertical-pages">
+              {project.pages.map((canvasPage, pageIndex) => <section key={canvasPage.id} id={`canvas-page-${canvasPage.id}`} data-canvas-page={canvasPage.id} className={`bs-canvas-page ${currentPage.id === canvasPage.id ? 'is-current' : ''}`} tabIndex={-1} aria-label={t('网页：{{name}}', { name: canvasPage.title })}>
+                <div className="bs-canvas-page-heading"><h3><button type="button" className="bs-canvas-page-title" onClick={() => selectCanvasPage(canvasPage.id)} aria-pressed={currentPage.id === canvasPage.id}><span>{t('第 {{index}} 页', { index: pageIndex + 1 })}</span>{canvasPage.title}</button></h3><span>{t('{{count}} 个区块', { count: canvasPage.blocks.length })}</span></div>
+                <SortableContext items={canvasPage.blocks.map(block => block.id)} strategy={verticalListSortingStrategy}>
+                  <CanvasDrop pageId={canvasPage.id} empty={!canvasPage.blocks.length}>
+                    {videoTarget?.pageId === canvasPage.id && !videoTarget.blockId && <div id="canvas-new-video"><BackgroundVideoPicker busy={videoBusy} onUpload={file => { selectCanvasBlock(canvasPage.id, ''); void uploadBackgroundVideo(file, '', canvasPage.id); }} onUrl={url => { selectCanvasBlock(canvasPage.id, ''); useVideoUrl(url, '', canvasPage.id); }} onCancel={cancelVideo} /></div>}
+                    {zoomTarget?.pageId === canvasPage.id && !zoomTarget.blockId && <div id="canvas-new-image"><CanvasImagePicker busy={imageBusy} onUpload={file => { selectCanvasBlock(canvasPage.id, ''); void uploadImage(file, '', canvasPage.id, true); }} onCancel={cancelZoom} /></div>}
+                    {canvasPage.blocks.map((block, index) => <SortableBlock key={block.id} block={block}
+                      videoTools={block.kind !== 'embed' ? <>
+                        {getBlockAppearance(block, project.accent).background === 'video' && block.backgroundVideo && <div className="bs-video-tools"><button type="button" className="bs-text-button" onClick={() => toggleBackgroundVideo(block)}>{block.backgroundVideo.paused ? <Play size={14} /> : <Pause size={14} />}{block.backgroundVideo.paused ? t("恢复背景自动播放") : t("暂停背景视频")}</button><button type="button" className="bs-text-button" onClick={() => openVideoPicker(block.id, canvasPage.id)}>{t("更换背景视频")}</button></div>}
+                        {videoTarget?.pageId === canvasPage.id && videoTarget.blockId === block.id && <div id={`canvas-video-${block.id}`}><BackgroundVideoPicker busy={videoBusy} onUpload={file => { selectCanvasBlock(canvasPage.id, block.id); void uploadBackgroundVideo(file, block.id, canvasPage.id); }} onUrl={url => { selectCanvasBlock(canvasPage.id, block.id); useVideoUrl(url, block.id, canvasPage.id); }} onCancel={cancelVideo} /></div>}
+                      </> : undefined}
+                      imagePicker={block.kind !== 'embed' && ((zoomTarget?.pageId === canvasPage.id && zoomTarget.blockId === block.id) || (block.effects.includes('zoom') && !block.image)) ? <CanvasImagePicker busy={imageBusy} onUpload={file => { selectCanvasBlock(canvasPage.id, block.id); void uploadImage(file, block.id, canvasPage.id, true); }} onCancel={zoomTarget?.blockId === block.id ? cancelZoom : undefined} /> : undefined}
+                      playing={previewMotion.playing} demo={effectDemos[block.id]}
+                      onReplay={effect => effect === 'zoom' && !block.image ? applyEffect(effect, block.id, canvasPage.id) : replayEffect(block.id, effect, canvasPage.id)}
+                      pageId={canvasPage.id} accent={project.accent} selected={currentPage.id === canvasPage.id && selectedId === block.id}
+                      first={index === 0} last={index === canvasPage.blocks.length - 1}
+                      onSelect={() => { selectCanvasBlock(canvasPage.id, block.id); if (window.innerWidth <= 800) setMobilePanel('properties'); }}
+                      onMove={delta => moveBlock(block.id, delta)} onCopy={() => copyBlock(block.id)} onDelete={() => deleteBlock(block.id)} />)}
+                  </CanvasDrop>
+                </SortableContext>
+              </section>)}
+            </div>
+          </> : <div className="bs-preview"><div className="bs-preview-toolbar"><span>{t("互动预览")}</span><div className="bs-segment"><button type="button" aria-label={t("电脑预览")} aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}><Monitor size={17} /></button><button type="button" aria-label={t("手机预览")} aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')}><Smartphone size={17} /></button></div></div>{!previewHtml && <p role="alert">{t('预览暂时无法生成，请检查项目内容。')}</p>}<iframe title={t("模块网站互动预览")} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={previewHtml} className={device === 'mobile' ? 'is-mobile' : ''} /><p className="bs-helper">{t("可以点击按钮、切换页面并体验特效。预览中不会打开外部网站。")}</p></div>}
+          </div>
         </section>
         <aside className="bs-properties bs-panel"><div className="bs-panel-heading"><div><span className="bs-step">03</span><h2>{t("让它成为你的")}</h2></div></div>{selected ? <div className="bs-property-scroll"><div className="bs-selection-label"><span>{t(labelFor(selected.kind))}</span><strong>{selected.title.split('\n')[0] || t("未命名模块")}</strong></div><label className="bs-field"><span>{selected.kind === 'embed' ? t("模块名称") : t("标题")}</span><textarea rows={selected.kind === 'nav' ? 1 : 3} value={selected.title} maxLength={160} onChange={e => updateBlock({ title: e.target.value }, 'title')} /></label>
           {selected.kind === 'embed' ? <div className="bs-import-note"><LayoutTemplate size={22} /><p>{t("保留原网页的静态布局与内容；原网页脚本、表单和在线图片不会加载。可以调整它的顺序，在前后添加模块。")}</p><p>{t("此模块不直接修改原网页代码。切换预览可查看静态页面。")}</p></div> : <>
@@ -440,7 +657,7 @@ export function BlockStudio() {
           </>}
           <div className="bs-property-divider" /><button type="button" className="bs-button bs-danger" onClick={() => deleteBlock(selected.id)}><Trash2 size={15} />{t("删除这个模块")}</button></div> : <div className="bs-properties-empty"><MousePointer2 size={26} /><h3>{t("选中一个模块")}</h3><p>{t("从左侧选择背景或配色开始；选中区块后，可以继续调整颜色、动效和内容。")}</p><button type="button" className="bs-button" onClick={() => { setMobilePanel('canvas'); setView('edit'); }}>{t("回到画布")}<ArrowRight size={14} /></button></div>}</aside>
       </div>
-      <DragOverlay dropAnimation={null}>{dragItem && <div className="bs-drag-overlay"><GripVertical size={18} />{t((dragItem.type === 'library' ? labelFor(dragItem.kind) : dragItem.type === 'palette' ? PALETTE_LIBRARY.find(p => p.id === dragItem.palette)?.name : dragItem.type === 'background' ? BACKGROUND_LIBRARY.find(b => b.id === dragItem.background)?.name : dragItem.type === 'effect' ? EFFECT_LIBRARY.find(e => e.id === dragItem.effect)?.name : labelFor(currentPage.blocks.find(b => b.id === dragItem.blockId)?.kind || 'text')) || '')}</div>}</DragOverlay>
+      <DragOverlay dropAnimation={null}>{dragItem && <div className="bs-drag-overlay"><GripVertical size={18} />{t((dragItem.type === 'library' ? labelFor(dragItem.kind) : dragItem.type === 'palette' ? PALETTE_LIBRARY.find(p => p.id === dragItem.palette)?.name : dragItem.type === 'background' ? BACKGROUND_LIBRARY.find(b => b.id === dragItem.background)?.name : dragItem.type === 'effect' ? EFFECT_LIBRARY.find(e => e.id === dragItem.effect)?.name : labelFor(project.pages.flatMap(page => page.blocks).find(b => b.id === dragItem.blockId)?.kind || 'text')) || '')}</div>}</DragOverlay>
     </DndContext>
   </main>;
 }

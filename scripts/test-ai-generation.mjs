@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import vm from 'node:vm';
+import ts from 'typescript';
 
 // No real credentials, external requests, persistent storage or paid inference.
 globalThis.fetch = async () => { throw new Error('unexpected external request'); };
@@ -64,6 +66,67 @@ for (const provider of AI_PROVIDERS) {
   assert(!JSON.stringify(result).includes(key));
 }
 assert.equal(providerCalls, 2);
+
+// Exercise the real browser submit handler: presets must retain their server-side
+// compatibility options, while a changed endpoint must stay fully custom.
+const apiSource = readFileSync(new URL('../components/studio/api-studio.tsx', import.meta.url), 'utf8');
+const apiAst = ts.createSourceFile('api-studio.tsx', apiSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const browserFunctions = new Map();
+function collectBrowserFunctions(node) {
+  if (ts.isFunctionDeclaration(node) && node.name) browserFunctions.set(node.name.text, node);
+  ts.forEachChild(node, collectBrowserFunctions);
+}
+collectBrowserFunctions(apiAst);
+const submitCode = ts.transpileModule(
+  ['checkEndpoint', 'generate'].map(name => browserFunctions.get(name).getText(apiAst)).join('\n') + '\nglobalThis.submit = generate;',
+  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+).outputText;
+const browserCases = [
+  ...AI_PROVIDERS.map(provider => ({ preset: provider.id, baseUrl: provider.baseUrl, model: provider.defaultModel, expected: provider.id })),
+  { preset: 'bailian', baseUrl: 'https://gateway.example.com/v1', model: 'my/custom-model', expected: 'custom' },
+  { preset: 'deepseek', baseUrl: 'https://api.deepseek.com/other-path', model: 'my/custom-model', expected: 'custom' },
+  { preset: 'bailian', baseUrl: 'https://dashscope.aliyuncs.com.attacker.example.com/compatible-mode/v1', model: 'my/custom-model', expected: 'custom' },
+  { preset: 'custom', baseUrl: AI_PROVIDERS[0].baseUrl, model: 'my/custom-model', expected: 'custom' },
+];
+for (const [index, fixture] of browserCases.entries()) {
+  let submitted, upstreamBody, upstreamUrl, calls = 0, browserResult, browserError = '';
+  const context = vm.createContext({
+    ...fixture, AI_PROVIDERS, apiKey: key, prompt: input.prompt, tokenParameter: 'max_completion_tokens',
+    URL, AbortController, setTimeout, clearTimeout,
+    controller: { current: null }, requestIdRef: { current: null }, cancelled: { current: false },
+    secureRandomUUID: () => '66666666-6666-4666-8666-' + index.toString(16).padStart(12, '0'),
+    setFieldErrors: errors => assert.equal(Object.keys(errors).length, 0),
+    setError: error => { browserError = error; }, setResult: value => { browserResult = value; },
+    setBusy() {}, setElapsed() {}, setNotice() {}, requestCancellation() {},
+    window: { matchMedia: () => ({ matches: false }) },
+    fetch: async (url, init) => {
+      assert.equal(url, '/api/generate');
+      submitted = JSON.parse(init.body);
+      const result = await generateAiWebsite(submitted, { fetchImpl: async (endpoint, providerInit) => {
+        calls++; upstreamUrl = endpoint; upstreamBody = JSON.parse(providerInit.body); return completion();
+      } });
+      return Response.json(result);
+    },
+  });
+  vm.runInContext(submitCode, context);
+  await context.submit({ preventDefault() {} });
+  assert.equal(browserError, '');
+  assert.equal(calls, 1, 'submitting never retries a potentially billable request');
+  assert.equal(submitted.provider, fixture.expected, 'unchanged preset retains its compatibility profile');
+  assert.equal(browserResult.html, html);
+  assert.equal(upstreamBody.model, fixture.model, 'the manually entered model is preserved');
+  assert.equal(upstreamBody.max_completion_tokens, 8192, 'the chosen output parameter is preserved');
+  assert(!('max_tokens' in upstreamBody));
+  if (fixture.expected === 'custom') {
+    assert.equal(submitted.baseUrl, fixture.baseUrl);
+    assert.equal(upstreamUrl, fixture.baseUrl + '/chat/completions', 'a custom endpoint is never redirected to a preset');
+    assert(!('enable_thinking' in upstreamBody) && !('thinking' in upstreamBody));
+  } else {
+    assert(!('baseUrl' in submitted), 'preset requests use the validated preset endpoint contract');
+    if (fixture.expected === 'bailian') assert.equal(upstreamBody.enable_thinking, false);
+    else assert.deepEqual(upstreamBody.thinking, { type: 'disabled' });
+  }
+}
 
 const customInput = { ...input, provider: 'custom', baseUrl: 'https://gateway.example.com/compatible/v1', model: 'org/Qwen-2.5:free', apiKey: 'gateway+token/with=chars:ok' };
 for (const baseUrl of ['https://gateway.example.com/compatible/v1', 'https://gateway.example.com/compatible/v1/', 'https://gateway.example.com/compatible/v1/chat/completions', 'https://gateway.example.com/compatible/v1/chat/completions/']) {
